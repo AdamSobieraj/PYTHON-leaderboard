@@ -1,6 +1,6 @@
 {
     "device-mode": "cuda",
-    "models-dir": "~/PDF-Extract-Kit-1.0/models",
+    "models-dir": "/home/blackmain/PycharmProjects/PYTHON_leaderboard/file_to_md_conversion/PDF-Extract-Kit-1.0/models",
     "layout-config": {
         "model": "doclayout_yolo"
     },
@@ -14,5 +14,6 @@
         "enable": true,
         "max_time": 400
     },
+    "apply_ocr": false,
     "config_version": "1.0"
 }

@@ -28,7 +28,8 @@ except ImportError:
 from pdf_parser_pymupdf4llm import PdfParser as PyMuPdfParser
 from pdf_parser_kreuzberg import PdfParser as KreuzbergParser
 from pdf_parser_docling import PdfParser as DoclingParser
-from pdf_parser_mineru import PdfParser as MineruParser
+from pdf_parser_marker import PdfParser as MarkerParser
+from pdf_parser_lmstudio import PdfParser as LmStudioParser
 
 
 class ResourceMonitor:
@@ -221,8 +222,9 @@ def process_pdf_to_test_folders(pdf_path: str):
     parsers = {
         "pymupdf4llm": PyMuPdfParser,
         "kreuzberg": KreuzbergParser,
-        "docling": DoclingParser
-        # "mineru": MineruParser
+        "docling": DoclingParser,
+        "marker" : MarkerParser,
+        "llmstudio" : LmStudioParser,
     }
 
     timing_results = []

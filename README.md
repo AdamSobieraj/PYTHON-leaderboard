@@ -38,7 +38,7 @@ enabling a fair apples-to-apples comparison.
 
 ## 🏗 Architecture
 
-```
+```[pdf_parser_mineru.py](../../Documents/ALg%20odrzucone/Mineru/pdf_parser_mineru.py)
                          ┌──────────────────────┐
                          │   BaseDocumentParser │  ← Abstract interface
                          │   (base_parser.py)   │     (ABC)
@@ -137,6 +137,51 @@ enabling a fair apples-to-apples comparison.
 | Native Markdown | ✅ yes |
 
 **When to use:** highly structured academic papers, complex layouts, math formulas.
+
+---
+
+### 5. Marker (Vikhrmodels) — `pdf_parser_marker.py`
+
+| Feature | Value |
+|---|---|
+| Engine | DL (Surya Layout, Detection & OCR) |
+| Speed | ⚡ (heavy compute) |
+| Tables | ✅✅ excellent | 
+| OCR | ✅ Surya OCR (state-of-the-art) |
+| GPU | ⚠️ highly recommended (very slow on CPU) | 
+| Native Markdown | ✅ yes (very clean formatting) |
+
+**When to use:** scanned books, textbooks, documents with complex reading orders, heavy math/equations, and PDFs requiring the highest possible OCR accuracy.
+
+---
+
+### 6. Azure Document Intelligence — `pdf_parser_azure.py`
+
+| Feature | Value |
+|---|---|
+| Engine | Cloud API (prebuilt-layout) |
+| Speed | ⚡⚡⚡ (Fast, offloaded to cloud) |
+| Tables | ✅✅✅ flawless (cross-page merge) | 
+| OCR | ✅ Azure Read API (handwriting support) |
+| GPU | ❌ Not needed locally | 
+| Native Markdown | ✅ yes (API version 2024-02-29-preview+) |
+
+**When to use:** enterprise environments, scanned documents with handwriting, cross-page tables, low local compute resources, when highest reliability is needed.
+
+---
+
+### 7. LM Studio Vision (Local VLM) — `pdf_parser_lmstudio.py`
+
+| Feature | Value |
+|---|---|
+| Engine | Local VLM (e.g., Qwen2.5-VL, Pixtral) via API |
+| Speed | 🐢/⚡ (Depends heavily on local GPU setup) |
+| Tables | ✅✅ excellent (Qwen-VL is SOTA for documents) | 
+| OCR | ✅✅ excellent (handles complex scans & multi-language) |
+| GPU | ⚠️ Strongly required (6GB+ VRAM for Q4 quantization) | 
+| Native Markdown | ✅ yes (enforced via System Prompt) |
+
+**When to use:** strict data privacy requirements (100% offline), running on powerful local hardware (e.g., RTX 3060/4070+), scanned textbooks, or when you need highly custom extraction rules via prompt engineering.
 
 ---
 
@@ -355,6 +400,7 @@ PYTHON_leaderboard/
 ├── output/                              # Benchmark results
 │   ├── docling/                         # Markdown outputs
 │   ├── kreuzberg/
+│   ├── marker/
 │   ├── pymupdf4llm/
 │   ├── mineru/
 │   ├── timing_ISO_*.txt                 # Text Report
@@ -363,7 +409,8 @@ PYTHON_leaderboard/
 ├── main.py                              # Benchmark runner
 ├── pdf_parser_docling.py
 ├── pdf_parser_kreuzberg.py
-├── pdf_parser_mineru.py                 # New parser!
+├── pdf_parser_mineru.py 
+├── pdf_parser_marker.py                 
 └── pdf_parser_pymupdf4llm.py
 
 ```
@@ -583,12 +630,13 @@ Hardware: Intel i9-13900K, 64 GB RAM, NVIDIA RTX 4090 24 GB
 - [x] PyMuPDF4LLM (C++, fastest)
 - [x] Kreuzberg (Tesseract OCR)
 - [x] Docling / IBM (Deep Learning + GPU)
-- [ ] Marker (surya OCR + DL, requires GPU)
-- [x] MinerU / OpenDataLab (LayoutLMv3 + PaddleOCR)
+- [x] Marker (surya OCR + DL, requires GPU)
+- [-] MinerU / OpenDataLab (LayoutLMv3 + PaddleOCR) (4.26 OCR not functioning)
 - [ ] Zerox (Vision LLM — GPT-4o / Gemini)
 - [ ] LlamaParse (cloud API)
 - [ ] Mistral OCR (cloud API)
-- [ ] Azure Document Intelligence
+- [-] Azure Document Intelligence (requires aure account)
+- [x] LLm studio (depends on vision type model)
 
 ### Chunking (text splitting)
 
