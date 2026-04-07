@@ -1,0 +1,43 @@
+Raport przetwarzania pliku: data/ISO_20022_Programme_UHB_SR2023_Edition.pdf
+GPU Monitorowane: Nie (Brak GPU NVIDIA lub biblioteki pynvml)
+============================================================
+Parser: pymupdf4llm
+  Czas wykonania:          60.1106 s
+  Liczba elementów:        830
+  Liczba znaków:           828614
+  RAM (Peak Process):      1433.49 MB
+  CPU (Avg Process):       1512.56 %
+  CPU (Peak Process):      2542.70 %
+----------------------------------------
+Parser: kreuzberg
+  Czas wykonania:          15.1955 s
+  Liczba elementów:        1
+  Liczba znaków:           631986
+  RAM (Peak Process):      1867.95 MB
+  CPU (Avg Process):       594.96 %
+  CPU (Peak Process):      818.00 %
+----------------------------------------
+Parser: docling
+  Czas wykonania:          129.1127 s
+  Liczba elementów:        760
+  Liczba znaków:           476604
+  RAM (Peak Process):      7016.55 MB
+  CPU (Avg Process):       163.01 %
+  CPU (Peak Process):      854.20 %
+----------------------------------------
+Parser: marker
+  Czas wykonania:          257.8433 s
+  Liczba elementów:        1
+  Liczba znaków:           779554
+  RAM (Peak Process):      23054.27 MB
+  CPU (Avg Process):       159.35 %
+  CPU (Peak Process):      2315.30 %
+----------------------------------------
+Parser: llmstudio
+  Czas wykonania:          4013.7250 s
+  Liczba elementów:        883
+  Liczba znaków:           668629
+  RAM (Peak Process):      22667.24 MB
+  CPU (Avg Process):       0.69 %
+  CPU (Peak Process):      98.50 %
+----------------------------------------
