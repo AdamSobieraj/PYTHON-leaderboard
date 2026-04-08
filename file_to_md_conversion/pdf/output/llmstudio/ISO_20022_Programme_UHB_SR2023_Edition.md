@@ -91,6 +91,7 @@ Page 823-883 New – Cheque message sections
 ---
 
 <!-- ELEMENT 4 -->
+```markdown
 # Table of Contents
 
 1. Introduction to ISO 20022
@@ -261,7 +262,7 @@ An XML element is named according to the following rules:
 - The name must not start with XML, xml, or Xml.
 - The name must not contain any spaces.
 
-### MX naming conventions
+## MX naming conventions
 
 There are some generic naming rules that apply to most items in the database:
 - The names of all items in the database use the upper CamelCase convention, as follows:
@@ -272,9 +273,9 @@ There are some generic naming rules that apply to most items in the database:
   - All names must start with an alphabetic character.
   - All characters that follow the first characters must be letters or numbers.
 
-#### Example of a Street Name element: `<StrtNm>Oxford Street</StrtNm>`
+### Example of a Street Name element: `<StrtNm>Oxford Street</StrtNm>`
 
-### MX message element multiplicity (occurrences)
+## MX message element multiplicity (occurrences)
 
 | Min | Max | Element Multiplicity |
 | --- | --- | --- |
@@ -338,7 +339,7 @@ Find out how ISO 20022 is used for cross-border payments and cash reporting on t
     - Download: [Link]
 - **Derived data mapping guidance**: Provides guidance on how to populate information from one messaging standard to another subsequent message.
     - Download: [Link]
-- **MT / MX equivalence table**: Documents the CBPR+ Usage Guidelines supported on Swift network HVPAS+ in comparison with the equivalent MT message.
+- **MT / MX equivalence table**: Documents the CBPR+ Usage Guidelines supported on Swift network HVPAS messages in comparison with the equivalent MT message.
     - Download: [Link]
 
 ### Samples library
@@ -406,7 +407,7 @@ Total max 35 char
 - Type: String
 - Max allowed size: 35 characters
 - Structure:
-    - Must contain minimum A & B, optionally followed by 1 or more additional business context elements (C, D,...).
+    - Must contain minimum A & B, optionally followed by 1 or more additional business context elements (C, D, ...).
     - Always ends with version element E (format "nn", e.g., "01")
     - Each element is separated by a period ".".
     - Length of each text element can vary up to max 10 characters. Total length, including periods, cannot exceed 35 chars.
@@ -462,11 +463,17 @@ List of special characters:
 ---
 
 <!-- ELEMENT 21 -->
-Point-to-point refers to data passed within a message from one party to the next. This data will not necessarily be passed in subsequent messages.
+```markdown
+# Point-to-point
+
+refers to data passed within a message from one party to the next. This data will not necessarily be passed in subsequent messages.
 
 For example: the Instruction Identification element contains a reference meaningful to the party sending a message, subsequent messages in a payment transaction chain can expect the Instruction Identification to be replaced by a reference meaningful to the party sending that message leg.
 
-End-to-end refers to data passed throughout the transaction life cycle i.e. within a message from one party to the next and continued in subsequent messages.
+
+# End-to-end
+
+refers to data passed throughout the transaction life cycle i.e. within a message from one party to the next and continued in subsequent messages.
 
 For example: the UETR element contains a Unique End-to-end Transaction Reference in accordance with the UUID version 4 standards. This same reference is used in all messages related to the payment transaction.
 
@@ -610,6 +617,7 @@ Note: when a new message (Message Definition Identifier) version is introduced t
 ---
 
 <!-- ELEMENT 32 -->
+```markdown
 | Message Definition Identifier | Business Service |
 | --- | --- |
 | pain.001.001.09 | swift.cbrplus.02 |
@@ -676,7 +684,7 @@ The head.001 Business Application Header **Copy Duplicate** indicator is used as
 ---
 
 <!-- ELEMENT 36 -->
-The head.001 Business Application Header **Possible Duplicate** element is used as a flag to indicate that if the party who will ultimately process the Business Document (e.g. pacs.008) received the original, then it should perform necessary actions to avoid processing this Business Message again.
+The head.001 Business Application Header **Possible Duplicate** element is used as a flag to indicate that if the party who will ultimately process the Business Document (e.g., pacs.008) received the original, then it should perform necessary actions to avoid processing this Business Message again.
 
 This element is represented by a Yes/No Boolean, whereby **true** represent this is a Possible Duplicate.
 It is not necessary to represent **false** (No) the absence of this optional element itself indicates that this is not considered a Possible Duplicate.
@@ -835,7 +843,7 @@ Group Header
 ```markdown
 # Interbank Customer Credit Transfer Initiation - Message Identification
 
-Each ISO20022 payment message has a **Message Identification** element, located in the Group Header. This *35 character* identifier is a point-to-point reference used to unambiguously identify the message.
+Each ISO20022 payment message has a **Message Identification** element, located in the Group Header. This **35 character** identifier is a point-to-point reference used to unambiguously identify the message.
 
 For the Payment Initiation (pain) messages the Message Identification has no exact equivalent in the legacy MT payment message. However, the Sender's Reference (Field 20) could be considered as a similar comparison where a pain message contains a single Transaction.
 
@@ -962,7 +970,6 @@ For the use cases of Authorised Party initiation and FI payment initiation, Forw
 
 <!-- ELEMENT 56 -->
 The CBPR+ pain.001 Interbank Usage Guideline aligns to the Usage Guideline of CGI-MP, to remain interoperable. It is important to recognize that the CGI Postal Address allows the Postal Address information to be captured as both structured and unstructured (address line) data, of which the Country Code within the Postal Address is mandatory.
-
 As a payment initiation could instruct various types of Payment Methods settled across various Clearing Methods, it should also be recognized that the Usage Guideline specification of those instructions need to be adhered to, which may need some enrichment or repair of the data from the payment initiation message. Postal Address is a good example of such data enrichment or repair, where many domestic payment methods exclusively support unstructured postal addresses. Likewise, CBPR+ and HVPS+ payments consider structured and unstructured postal addresses to be mutually exclusive. i.e., only one or the other may be used.
 
 ### CGI-MP payment Initiation/ CBPR+ payment initiation interbank
@@ -1003,11 +1010,11 @@ The pain message provides a set of optional elements where the payment type can 
 
 # Payment Type Information
 
-## Instruction Priority (Min 0 – Max 1)
-A choice of embedded codes representing the urgency considered by the instructing party. This point-to-point information may be used by the instructed party to differentiate the processing.
-
-## Service Level (Min 0 – Max 3)
+## Service Level (Min0 – Max1)
 A nested element which may either use an external ISO Service Level code or a proprietary code. It is used to identify a particular agreed service level which should be applied to the payment. Where a service level is not agreed, it may be ignored.
+
+## Instruction Priority (Min 0 – Max 1)
+A choice of imbedded codes representing the urgency considered by the instructing party. This point-to-point information may be used by the instructed party to differentiate the processing.
 
 ## Local Instrument (Min 0 – Max 1)
 A nested element which may either use an external ISO Local Instrument code or a proprietary code. It can be used in combination with Service Level to identify the type of local instrument. For example, INST - Instant Credit Transfer for SEPA Service Level.
@@ -1462,9 +1469,8 @@ The Purpose element within the pain.001 message captures the reason for the paym
 
 The purpose is used to capture the nature of the payment, e.g., IVPT Invoice Payment, FEES Payment of Fees etc. and should not be confused with Regulatory Reporting codes. By definition this information is typically defined by the Debtor.
 
-| The externalised Purpose code set is classified by the purpose, for example commercial, for which the numerous codes within the classification are each described by Name and Definition. |
-| --- | --- |
-| For example, LIMA is classified within the Cash Management categorisation, with the Name Liquidity Management described as a Bank initiated account transfer to support zero target balance management, pooling or sweeping. |
+| The externalised Purpose code set is classified by the purpose, for example commercial, for which the numerous codes within the classification are each described by Name and Definition.
+For example, LIMA is classified within the Cash Management categorisation, with the Name Liquidity Management described as a Bank initiated account transfer to support zero target balance management, pooling or sweeping. |
 
 Category Purpose also captures a high-level purpose, which unlike Purpose is less granular but can trigger special processing e.g., Category Purpose code SALA 'Salary Payment' may trigger a reporting process which restricts sensitive data i.e., individual salary names.
 
@@ -1473,16 +1479,16 @@ Credit Transfer Transaction Information
 ---
 
 <!-- ELEMENT 90 -->
-The Regulatory Reporting block within the pain.001 message is nested to capture regulatory and statutory information needed to report to the appropriate authority/s.
+The **Regulatory Reporting** block within the pain.001 message is nested to capture regulatory and statutory information needed to report to the appropriate authority/s.
 
-The Debit Credit Reporting Indicator utilises an embedded choice of code to indicate whether the regulatory reporting applies to the:
+The **Debit Credit Reporting Indicator** utilises an embedded choice of code to indicate whether the regulatory reporting applies to the:
 - DEBT (debit)
 - CRED (credit)
 - BOTH
 
-The Authority element captures the Name and Country code of the Authority/Entity requiring the regulatory reporting information.
+The **Authority** element captures the Name and Country code of the Authority/Entity requiring the regulatory reporting information.
 
-The Details element provides the detail on the regulatory reporting information.
+The **Details** element provides the detail on the regulatory reporting information.
 
 ---
 
@@ -1842,10 +1848,9 @@ The **Initiating Party** in the context of interbank payment initiation report i
 ```markdown
 # Interbank Customer Payment Status Report – Forwarding Agent
 
-The **Forwarding Agent** is mandatory in a relay scenario whereby the receiver of the pain.002 message is not the original Debtor. In this case, the Initiating Party (the Debtor Agent) has to provide **Business Identifier Code (BIC FI)** of the Forwarding Agent in the pain.002 message. The Forwarding Agent acts as a concentrating financial institution and forwards the pain.002 message to the Debtor or the Initiating Party.
+The **Forwarding Agent** is mandatory in a relay scenario whereby the receiver of the pain.002 message is not the original Debtor. In this case, the Initiating Party (the Debtor Agent) has to provide Business Identifier Code (BIC FI) of the Forwarding Agent in the pain.002 message. The Forwarding Agent acts as a concentrating financial institution and forwards the pain.002 message to the Debtor or the Initiating Party.
 
-## Other options to identify the Forwarding Agent include:
-
+Other options to identify the **Forwarding Agent** include:
 - Clearing System Member ID
 - LEI (Legal Entity Identifier)
 
@@ -1959,6 +1964,18 @@ Note: A **Reason** code must be provided where the **Transaction Status** RJCT (
 The interbank pain.002 Customer Payment Transaction Status element facilitates updates from the Debtor Agent to the previous Agent, e.g., the Forwarding Agent or the payment originator (the Debtor/ the Initiating Party) on changes to the status of the payment. Such Status Information messages (pain.002), with the exception of reject code RJCT which is mandatory in CBPR+, are bilateral agreed, where upon a variety of these Transaction Statuses may be used by the Instructed Agent at different stages of the payment processing.
 
 This diagram illustrates the logical order in which these codes may be used during the processing of the Payment Initiation messages (pain) and the interbank Payment Clearing And Settlement message (pacs) and the role of the Agents in providing these status.
+
+
+| Any Agent | PDNG |
+| --- | --- |
+| RJCT |  |
+| ACSP | CPUC |
+| ACIS | ACWP |
+| ACWC | ACCC |
+| ACFC | Creditor Agent |
+| ACCP |  |
+| ACTC |  |
+| RCVD |  |
 
 ---
 
@@ -2075,11 +2092,12 @@ In the scenario Authorised Party Initiation, the Debtor Agent sends the pain.002
 
 |  |  |
 | --- | --- |
-| 1 | Agent I receives intraday balance report from the Debtor Agent (A) on behalf of their mutual customer |
-| 2 | Agent (I) initiates a sweep on behalf of the Corporate by sending pain.001 to the Debtor Agent |
-| 3a | Debtor Agent (A) optionally provides a status update to the Initiating Party (Agent I), based upon a bilateral agreement |
-| 3 | Debtor Agent (A) debits the account of Debtor and initiates a credit transfer |
-| 4 | Creditor Agent (B) receives credit transfer message, credits the Creditor, and sends a camt.053 (statement) at the end of the business day to the Creditor. An optional status report is sent to the previous Agent based upon a bilateral agreement |
+| **Sweep Contract** |  |
+
+1. **Agent (I) receives intraday balance report from the Debtor Agent (A) on behalf of their mutual customer**
+2. **Agent (I) initiates a sweep on behalf of the Corporate by sending pain.001 to the Debtor Agent**
+3a. **Debtor Agent (A) optionally provides a status update to the Initiating Party (Agent I), based upon a bilateral agreement**
+4. **Creditor Agent (B) receives credit transfer message, credits the Creditor, and sends a camt.053 (statement) at the end of the business day to the Creditor. An optional status report is sent to the previous Agent based upon a bilateral agreement**
 
 See use case p.8.1.2 for a sweeping contract with a short position
 
@@ -3000,15 +3018,13 @@ Single transactions in the CBPR+ payment usage guidelines enable a transaction t
 ---
 
 <!-- ELEMENT 191 -->
-The pacs.008 Settlement Method element within the Group Header Settlement Information, includes one of the embedded codes to indicate how the payment message will be settled.
+The pacs.008 **Settlement Method** element within the Group Header **Settlement Information**, includes one of the embedded codes to indicate how the payment message will be settled.
 
-The Settlement Method element in the pacs.008 allows a choice of an embedded code.
+The **Settlement Method** element in the pacs.008 allows a choice of an embedded code.
 
-COVE indicate this Customer Credit Transfer will be settlement using a covering pacs.009 (COV). The Agents being used in the covering payment to reimburse the Instructed Agent can be provided in the dedicated Reimbursement Agent elements. This allows the Instructed Agent to identify the debit account on their books from the Reimbursement Agent account or look up the account related to the reimbursement agent.
-
-INDA indicate this Customer Credit Transfer will be settlement by the Instructed Agent (as the Account Servicing Institution) The account held at the Instructed Agent may captured in the dedicated Settlement Account element.
-
-INGA indicate this Customer Credit Transfer has already been settlement by the Instructing Agent, who has credited the Account they service for the Instructed Agent (as an Account Owner). The account held by the Instructed Agent with the Instructing Agent may captured in the dedicated Settlement Account element.
+- **COVE**: indicate this Customer Credit Transfer will be settlement using a covering pacs.009 (COV). The Agents being used in the covering payment to reimburse the Instructed Agent can be provided in the dedicated Reimbursement Agent elements. This allows the Instructed Agent to identify the debit account on their books from the Reimbursement Agent account or look up the account related to the reimbursement agent.
+- **INDA**: indicate this Customer Credit Transfer will be settlement by the Instructed Agent (as the Account Servicing Institution) The account held at the Instructed Agent may captured in the dedicated **Settlement Account** element.
+- **INGA**: indicate this Customer Credit Transfer has already been settlement by the Instructing Agent, who has credited the Account they service for the Instructed Agent (as an Account Owner). The account held by the Instructed Agent with the Instructing Agent may captured in the dedicated **Settlement Account** element.
 
 Settlement Method code CLRG is not part of CBPR+ specifications but instead used in Market Infrastructure specification (HVPS+)
 
@@ -3032,14 +3048,16 @@ In a number of business Use Cases there are examples of additional legs, which m
 ---
 
 <!-- ELEMENT 193 -->
+```markdown
 If we simplify a point-to-point message leg and look at when it is settled (booked using traditional language) we can ask ourselves: is the Instructing Agent's account held (serviced) on the books of the Instructed Agent or is the Instructing Agent holding (servicing) the account of the Instructed Agent.
 
 Depending on the answer to this question, this determines the Settlement Method in a serial payment process.
-Where the INstructING Agent services the account and is responsible for settling the payment leg, the Settlement Method code INGA is used.
-Where the INstructED Agent services the account and is responsible for settling the payment leg, the Settlement Method code IND A is used.
+Where the INstructing Agent services the account and is responsible for settling the payment leg, the Settlement Method code INGA is used.
+Where the INstructed Agent services the account and is responsible for settling the payment leg, the Settlement Method code IND A is used.
 
 | Payment transaction lifecycle |
-| --- |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ![Image](https://example.com/image1.png) | ![Image](https://example.com/image2.png) | ![Image](https://example.com/image3.png) | ![Image](https://example.com/image4.png) | ![Image](https://example.com/image5.png) | ![Image](https://example.com/image6.png) | ![Image](https://example.com/image7.png) | ![Image](https://example.com/image8.png) | ![Image](https://example.com/image9.png) | ![Image](https://example.com/image10.png) | ![Image](https://example.com/image11.png) | ![Image](https://example.com/image12.png) | ![Image](https://example.com/image13.png) | ![Image](https://example.com/image14.png) | ![Image](https://example.com/image15.png) | ![Image](https://example.com/image16.png) | ![Image](https://example.com/image17.png) | ![Image](https://example.com/image18.png) | ![Image](https://example.com/image19.png) | ![Image](https://example.com/image20.png) | ![Image](https://example.com/image21.png) | ![Image](https://example.com/image22.png) | ![Image](https://example.com/image23.png) | ![Image](https://example.com/image24.png) | ![Image](https://example.com/image25.png) | ![Image](https://example.com/image26.png) | ![Image](https://example.com/image27.png) | ![Image](https://example.com/image28.png) | ![Image](https://example.com/image29.png) | ![Image](https://example.com/image30.png)
 
 ---
 
@@ -3589,33 +3607,37 @@ ISO 20022 does not prevent Charges from being booked in a different currency, bu
 2. **Debtor Agent executes a payment for GBP 95 (GBP 100 minus a 5 GBP charge deducted as this is borne by the Creditor.)**
 3. **Agent B processes the payment deducting their fee of GBP 10**
 
-| Interbank Settlement | Amount |
-|----------------------|--------|
-| GBP 95              |
+| Interbank Settlement | Amount | GBP 95 |
+|----------------------|--------|--------|
+| Instructed Amount     |        | GBP 100 |
+| Charge Bearer         | Code   | CRED   |
+| Charge Information    | Amount | 5      |
+|                       | Currency | GBP    |
+|                       | Agent   | BIC AAAAGB22 |
 
-| Instructed Amount    | GBP 100|
+| Interbank Settlement | Amount | GBP 85 |
+|----------------------|--------|--------|
+| Instructed Amount     |        | GBP 100 |
+| Charge Bearer         | Code   | CRED   |
+| Charge Information    | Amount | 5      |
+|                       | Currency | GBP    |
+|                       | Agent   | BIC AAAAGB22 |
 
-| Charge Bearer        | Code   | CRED |
-|----------------------|--------|------|
-| Charge Information   | Amount | 5    |
-|                      | Currency| GBP  |
-|                      | Agent   | BIC AAAAGB22 |
+| Interbank Settlement | Amount | GBP 85 |
+|----------------------|--------|--------|
+| Instructed Amount     |        | GBP 100 |
+| Charge Bearer         | Code   | CRED   |
+| Charge Information    | Amount | 5      |
+|                       | Currency | GBP    |
+|                       | Agent   | BIC AAAAGB22 |
 
-| Interbank Settlement | Amount |
-|----------------------|--------|
-| GBP 85              |
-
-| Instructed Amount    | GBP 100|
-
-| Charge Bearer        | Code   | CRED |
-|----------------------|--------|------|
-| Charge Information   | Amount | 5    |
-|                      | Currency| GBP  |
-|                      | Agent   | BIC AAAAGB22 |
-
-| Charge Information   | Amount | 10   |
-|----------------------|--------|------|
-| Currency             | GBP    |      |
+| Interbank Settlement | Amount | GBP 85 |
+|----------------------|--------|--------|
+| Instructed Amount     |        | GBP 100 |
+| Charge Bearer         | Code   | CRED   |
+| Charge Information    | Amount | 5      |
+|                       | Currency | GBP    |
+|                       | Agent   | BIC AAAAGB22 |
 
 ---
 
@@ -4132,23 +4154,25 @@ See use case **pn.1.2.1** for an Authorised Party Payment.
 2. **Debtor Agent (A) Initiates Serial Payment**
    - Debtor Agent (A) initiates a payment using the serial method towards the Creditor Agent (F).
 
-3a. **Agent B Initiates Cover Method Towards Creditor Agent (F)**
-   - Agent B initiates a payment using the cover method towards the Creditor Agent (F) by sending a direct pacs.008 to Agent E who they have business relationship with.
+3a. **Agent B Initiates Cover Method Payment**
+   - Agent B initiates a payment using the cover method towards the Creditor Agent (F), sending a direct pacs.008 to Agent E who they have business relationship with.
 
-3b. **Parallel Covering Payment to Credit Account of Agent (E)**
-   - In parallel, the Agent (B) initiates a covering payment to credit the account of Agent (E) with their correspondent banking business relationship.
+3b. **Parallel Covering Payment by Agent B**
+   - In parallel, Agent B initiates a covering payment to credit the account of Agent (E) with their correspondent banking business relationship.
 
 4. **Agent E Receives and Processes Payment**
-   - Agent E receives the payment instruction and processes the payment on to Agent F. Alternatively, they may have chosen to await until settlement occurred in Step 6 based upon their risk appetite.
+   - Agent E receives the payment instruction and processes the payment on to Agent F. Alternatively, they may choose to await until settlement occurred in Step 6 based upon their risk appetite.
 
 5. **Agent C Processes Payment for Agent D**
    - Agent C processes the payment on behalf of Agent D using a correspondent banking business relationship.
 
-6. **Agent D Receives and Credits Account of Agent E**
-   - Agent D receives the payment and credits the account of Agent E. Agent D produces an end-of-day account statement report. An optional real-time notification, e.g., advice of credit, may have also been created at the time of the credit posting.
+6. **Agent D Receives and Credits Payment**
+   - Agent D receives the payment and credits the account of Agent E.
+   - Agent D produces an end-of-day account statement report. An optional real-time notification, e.g., advice of credit, may also be created at the time of the credit posting.
 
 7. **Agent F Receives and Credits Creditor's Account**
-   - Agent F receives the payment and credits the account of the Creditor, and may optionally provide a notification, e.g., credit notification.
+   - Agent F receives the payment and credits the account of the Creditor.
+   - Agent F may optionally provide a notification, e.g., credit notification.
 
 ---
 
@@ -4390,7 +4414,6 @@ The **Settlement Time Indication** optionally captures the time settlement occur
 ## Settlement Time Request
 
 The **Settlement Time Request** optionally captures the time settlement is requested for the payment instruction by the Instructing Agent. This Time can be capture in four nested elements:
-
 - **CLS Time**: the time the amount must be credit to CLS Bank
 - **Till Time**: the time until which the payment may be settled
 
@@ -4579,7 +4602,7 @@ the pacs.009 the Creditor is a Financial Institution, therefore the
 <!-- ELEMENT 273 -->
 The Instruction for Next Agent and Instruction for Creditor Agent elements within the pacs.009 Financial Institution Credit Transfer optionally provides information related to the processing of the payment for these Agents.
 
-The Instruction for Creditor Agent element offers a multiplicity of up to 2 occurrences of information. This element enables:
+The **Instruction for Creditor Agent** element offers a multiplicity of up to 2 occurrences of information. This element enables:
 - the use of 2 embedded codes to describe the instruction
 - free format instruction information
 - or both, where the free format complements the code.
@@ -4587,7 +4610,7 @@ The use of this element may be bilaterally agreed with the Creditor Agent. It mu
 
 The Creditor of the pacs.009 ADV is captured in the pacs.009 (used to settle the pacs.009 ADV) Instruction for Creditor Agent, Instruction Information element preceded by /UDLC/(Underlying Creditor) to provide party transparency in the settlement message.
 
-The Instruction for Next Agent element offers a multiplicity of up to 6 occurrences of information. This element is restricted to free format instruction information in CBPR+. The element is used to provide instruction to the next Agent (which may not be the Creditor Agent)
+The **Instruction for Next Agent** element offers a multiplicity of up to 6 occurrences of information. This element is restricted to free format instruction information in CBPR+. The element is used to provide instruction to the next Agent (which may not be the Creditor Agent)
 
 ---
 
@@ -4607,8 +4630,12 @@ The *Creditor* of the pacs.009 ADV are commonly captured in one of the following
 | LEI | 123456A1BCDEFG0ZTS4 |
 | Name | ABC BANK |
 | Address | Various Structured elements |
+| | 252 HIGH STREET LONDON EC1 1WX GB |
 
 ```markdown
+pacs.009 **Instruction for Creditor Agent/Instruction Information**.
+Up to 2 occurrences of Instruction Information may be provided. The last available occurrence of *Instruction Information*, preceded by /UDLC/, must be used to capture the Underlying Creditor provided in the pacs.009 ADV.
+
 | pacs.009 Instruction for Creditor Agent/Instruction Information |
 | --- |
 | /UDLC/ABCDGB22 |
@@ -4759,14 +4786,13 @@ Like the pacs.008, the Agents being used in the covering payment to reimburse th
 ---
 
 <!-- ELEMENT 288 -->
-The pacs message captures a number of Reimbursement Agents as a sub element to **Settlement Information** these elements detail the Agent in the cover method who will process the pacs.009 cover. These elements are similar in nature to the Field 53, 54 and 55 in legacy MT messages and are referred to as The **Instructing Reimbursement Agent**, and **Instructed Reimbursement Agent**. Each of these reimbursement agents also has a dedicated account element to optionally capture their related account details.
+The pacs message captures a number of Reimbursement Agents as a sub element to **Settlement Information** these elements detail the Agent in the cover method who will process the pacs.009 cover.
+These elements are similar in nature to the Field 53, 54 and 55 in legacy MT messages and are referred to as The **Instructing Reimbursement Agent**, and **Instructed Reimbursement Agent**. Each of these reimbursement agents also has a dedicated account element to optionally capture their related account details.
 
 The **Instructing Reimbursement Agent** captures the Agent who will execute a covering payment (i.e. pacs.009 COV or domestic equivalent) often referred to as the currency correspondent. This optional element is comparable with the Field 53a in the legacy FIN message.
-
 The **Instructing Reimbursement Agent Account** captured the account related to this Reimbursement Agent. This element can be compared to the Party Identifier of the legacy Field 53.
 
 The **Instructed Reimbursement Agent** captures the Agent who will receive the covering payment (i.e., pacs.009 cov or domestic equivalent) and credit the account of the pacs.008 FI to FI Customer Credit Transfer Instructed Agent. This optional element is comparable with the Field 54a in the legacy FIN message.
-
 The **Instructed Reimbursement Agent Account** captured the account related to this Reimbursement Agent. This element can be compared to the Party Identifier of the legacy Field 54.
 
 ---
@@ -4845,13 +4871,13 @@ The pacs.009 message has three optional elements to capture the optional informa
 
 | Min 0 – Max 1 | The Settlement Priority provides an optional choice of embedded codes to indicate the instruction's settlement priority from the perspective of the Instructing Agent. This point-to-point information may be used by the Instructed Agent to identify the priority associated with the Settlement Method and should not be confused with the Instruction Priority.
 | --- | --- |
-|  | Note: As the Settlement Method of the pacs.009 (ADV) is 'COVE' (settled via a covering pacs.009) Settlement Priority is relevant to the covering payment not the pacs.009 ADV |
+| Note: As the Settlement Method of the pacs.009 (ADV) is 'COVE' (settled via a covering pacs.009) Settlement Priority is relevant to the covering payment not the pacs.009 ADV |
 
 | Min 0 – Max 1 | The Settlement Time Indication optionally captures the time settlement occurred at a transaction administrator such as a Market Infrastructure. This DateTime can be captured in two nested elements, Debit Date Time and Credit Date Time.
 | --- | --- |
-|  | The Settlement Time Request optionally captures the time settlement is requested for the payment instruction by the Instructing Agent. This Time can be capture in four nested elements:
-- CLS Time: the time the amount must be credit to CLS Bank
-- Till Time: the time until which the payment may be settled
+| The Settlement Time Request optionally captures the time settlement is requested for the payment instruction by the Instructing Agent. This Time can be capture in four nested elements: |
+| * CLS Time the time the amount must be credit to CLS Bank |
+| * Till Time the time until which the payment may be settled |
 
 ---
 
@@ -5291,13 +5317,13 @@ The pacs.009 message (unlike the pacs.008) has only one element to capture the a
 
 ## Interbank Settlement Amount
 
-A mandated currency amount moved between the Instructing Agent and the Instructed Agent. This therefore is the point-to-point currency amount exchanged, comparable with the MT Field 32A
+A mandated currency amount moved between the *Instructing Agent* and the *Instructed Agent*. This therefore is the point-to-point currency amount exchanged, comparable with the MT Field 32A
 
 ## Interbank Settlement Date
 
-A mandated date on which the Interbank Settlement should be executed between the Instructing Agent and the Instructed Agent. This therefore is the value date comparable with the MT Field 32A
+A mandated date on which the Interbank Settlement should be executed between the *Instructing Agent* and the *Instructed Agent*. This therefore is the value date comparable with the MT Field 32A
 
-Note: the Financial Institution Credit Transfer (pacs.009) has no Instructed Amount element, Exchange Rate or Charger Bearer (unlike the pacs.008) as the Instructed Settlement Amount is expected to be transferred across the end-to-end payment chain without any charges being applied or currency conversions.
+Note: the Financial Institution Credit Transfer (pacs.009) has no *Instructed Amount* element, Exchange Rate or Charger Bearer (unlike the pacs.008) as the Instructed Settlement Amount is expected to be transferred across the end-to-end payment chain without any charges being applied or currency conversions.
 
 ---
 
@@ -5404,6 +5430,8 @@ Name by which the Agent is known
 
 Postal Address
 
+Nested element capturing either structured or unstructured Debtor address details
+
 ---
 
 <!-- ELEMENT 331 -->
@@ -5427,7 +5455,7 @@ The Debtor Agent and Creditor Agent are static roles in the pacs.009 FI to FI Cu
 
 | Min 0 – Max 1 | Min 0 – Max 1 |
 | --- | --- |
-| ![Debtor Agent](https://example.com/debtor-agent-icon.png) | ![Creditor Agent](https://example.com/creditor-agent-icon.png) |
+| ![Debtor Agent](image_url) | ![Creditor Agent](image_url) |
 
 Note: Where the Debtor and Creditor maintain a relationship with the same intermediary counterpart. It is recommended that this Agent is captured in the Creditor Agent element to align with translation from the legacy MT message.
 
@@ -5651,9 +5679,9 @@ Cover Method Financial Institution Payments
 
 5. **Agent C processes the payment on Agent D using a correspondent banking business relationship.**
 
-6. **Agent D receives the payment and credits the account of Agent E. Agent D produces an end-of-day account statement report. An optional real-time notification, e.g., advice of credit may have also been created at the time of the credit posting.**
+6. **Agent D receives the payment and credits the account of Agent E. Agent D produces an end-of-day account statement report. An optional real-time notification e.g., advice of credit may have also been created at the time of the credit posting.**
 
-7. **Agent F receives the payment and credits the account of the Creditor, and may optionally provide a notification, e.g., credit notification.**
+7. **Agent F receives the payment and credits the account of the Creditor, and may optionally provide a notification e.g., credit notification.**
 
 ---
 
@@ -5945,7 +5973,7 @@ This diagram illustrates the logical order in which these codes may be used duri
 | RR09 | InvalidStructuredCreditorReference | Structured creditor reference invalid or missing. | Sent by Instructed Agent when the structure of the creditor reference in the remittance information is invalid or missing |
 | RR11 | InvalidDebtorAgentServiceID | Invalid or missing identification of a bank proprietary service. | Sent by Instructed Agent where the proprietary identification for the Debtor is invalid or not understood |
 | RR12 | InvalidPartyID | Invalid or missing identification required within a particular country or payment type. | Sent by Instructed Agent where a proprietary party identification is considered invalid or not understood |
-| RUTA | ReturnUponUnableToApply | Return following investigation request and no remediation possible. | Sent by Instructed Agent that is unsatisfied with the outcome of the unable to apply request and is subsequently rejecting the payment instruction. Alternatively it can be used by the original Creditor Agent when the creditor is unable to apply the transaction |
+| RUTA | ReturnUponUnableToApply | Return following investigation request and no remediation possible. | Sent by Instructed Agent that is unsatisfied with the outcome of the unable to apply instruction and is subsequently rejecting the payment instruction. Alternatively it can be used by the original Creditor Agent when the creditor is unable to apply the transaction |
 | TM01 | InvalidCut off time | Associated message, payment information block, or transaction was received after agreed processing cut-off time. | Sent by Instructed Agent when the message was received after the agreed processing cut-off time and an agreement is in place to reject rather than apply the next possible value date. |
 | UPAY | UnduePayment | Payment is not justified. | Sent by Instructed Agent the payment is undue |
 
@@ -6017,13 +6045,13 @@ An agent may provide multiple Payment Status Information updates (with different
 
 | Steps | Description |
 | --- | --- |
-| 1 | Debtor initiates a payment instruction to the Debtor Agent |
-| 2 | Debtor Agent (A) initiates a serial payment towards the Creditor Agent (D) using Agents B & C as intermediaries |
-| 3 | Agent B provides a status update ACTC (accepted technical validations are successful) to Agent A, based upon a bilateral agreement. |
-| 4 | Agent B provides a further status update ACSP (accepted settlement in progress) to Agent A, based upon a bilateral agreement. |
-| 5 | Agent B processes the payment on Agent C |
+| **1** | Debtor initiates a payment instruction to the Debtor Agent |
+| **2** | Debtor Agent (A) initiates a serial payment towards the Creditor Agent (D) using Agents B & C as intermediaries |
+| **3** | Agent B provides a status update ACTC (accepted technical validations are successful) to Agent A, based upon a bilateral agreement. |
+| **4** | Agent B provides a further status update ACSP (accepted settlement in progress) to Agent A, based upon a bilateral agreement. |
+| **5** | Agent B processes the payment on Agent C |
 
-Where a **payment is rejected**, the use of the pacs.002
+Where a payment is rejected, the use of the pacs.002
 
 ---
 
@@ -6267,9 +6295,9 @@ For example:
 
 Note: the `xx` in the CBPR+ Usage Guideline represents the message version of the message
 
-| Group Header | Message Identification | xyz9875 |
-|--------------|------------------------|---------|
-| Original Group Information | Original Message Identification | abcd1234 |
+| Group Header | Message Identification | Original Group Information |
+|--------------|------------------------|----------------------------|
+| xyz9875      | abcd1234               |                            |
 
 ---
 
@@ -6598,12 +6626,14 @@ Cover Method Payments
 ```markdown
 (pacs.008)
 
-1. Debtor initiates a payment instruction to the Debtor Agent
-2. Debtor Agent (A) initiates a serial payment towards the Creditor Agent (D) using Agents B & C as intermediaries
-3. Agent B processes the payment on Agent C
-4. Agent C processes the payment on Agent D
-5. Having received the payment, Agent D recognises the payment cannot be completed as requested e.g., the Creditor's account is closed. Agent D returns the payment to Agent C (as the original payment had already settled) together with the return reason.
-6. Agent B returns funds to Agent A, together with the reason code for return.
+| Step | Description |
+| --- | --- |
+| 1 | Debtor initiates a payment instruction to the Debtor Agent |
+| 2 | Debtor Agent (A) initiates a serial payment towards the Creditor Agent (D) using Agents B & C as intermediaries |
+| 3 | Agent B processes the payment on Agent C |
+| 4 | Agent C processes the payment on Agent D |
+| 5 | Having received the payment, Agent D recognises the payment cannot be completed as requested e.g. the Creditor's account is closed. Agent D returns the payment to Agent C (as the original payment had already settled) together with the return reason. |
+| 6 | Agent B returns funds to Agent A, together with the reason code for return. |
 
 ---
 
@@ -6631,14 +6661,10 @@ Cover Method Payments
 2. Debtor Agent (A) initiates a serial payment towards the Creditor Agent (D) using Agents B & C as intermediaries
 3. Agent B processes the payment on Agent C
 4. Agent C processes the payment on Agent D
-5. Agent D credits the account of the Creditor, and may optionally return funds to Agent A if the payment is overpaid or refunded.
+5. Agent D credits the account of the Creditor, and may optionally return funds to Agent A if the payment is overpaid.
 6. Agent D returns the payment to Agent C using a Payment Return message (pacs.004)
 7. Agent C return funds to Agent B, together with the reason code for return.
 8. Agent B return funds to Agent A, together with the reason code for return.
-
-+ Return Reason
-+ Return Reason
-+ Return Reason
 
 ---
 
@@ -6838,7 +6864,7 @@ See use case p.8.2.1 for the cover payment sample c.29.2.2 for case resolution a
 ---
 
 <!-- ELEMENT 426 -->
-Financial Institution
+Financial Institution  
 Direct Debit
 
 ---
@@ -6973,7 +6999,7 @@ The Financial Institution Direct Debit **Creditor Account** provides a optional 
 | **Currency** | The Currency for which the account is held. This is identified using the three characters **ISO currency code**.
 | **Name** | The Name of the Account, as Assigned by the servicing institution.
 
-A nested element which contains a Proxy Identifier together with the Proxy Type, combined with an optional ISO Bank Account Type
+A nested element which contains a Proxy Identifier together with the Proxy Type, combined with an optional ISO **Bank Account Type**
 
 ---
 
@@ -6982,7 +7008,7 @@ The Financial Institution Direct Debit message **Direct Debit Transaction Inform
 
 It is important to recognise that the data elements contained in this part of the Direct Debit message are identical the pacs.009 Financial Institution Credit Transfer message which represents the next stage of the journey should the Direct Debit be accepted.
 
-From a business perspective authorisation of a direct debit instruction can be predetermined in a couple of ways (as CBPR+ is not operating a Direct Debit scheme). Either third party debt authority could be granted to the Agent instructing of the Direct Debit, or the Payment Identification could be used to capture a static unique value (for a mandate) to determine if the
+From a business perspective authorisation of a direct debit instruction can be predetermined in a couple of ways (as CBPR+ is not operating a Direct Debit scheme). Either third party debt authority could be granted to the Agent instructing of the Direct Debit, or the Payment Identification could be used to capture a static unique value (for example) to determine if the
 
 ---
 
@@ -7092,18 +7118,15 @@ The ISO 20022 pacs messages describe the Agent whose account is debited for a tr
 | Room |
 | Postal Address |
 
-Information used to identify a Debtor by a clearing system identifier.
-- **BICFI**
-- **Clearing System Member Id**
+The BIC which identifies the Debtor
 
-Legal entity identifier of the financial institution.
-- **LEI**
+Clearing System Member Id
+
+LEI
 
 Name by which the Agent is known
-- **Name**
 
-Nested element capturing either structured or unstructured Debtor address details
-- **Postal Address**
+Postal Address
 
 ---
 
@@ -7537,7 +7560,7 @@ The purpose is used by the capture the nature of the payment e.g. CCPC CCP Clear
 
 The externalised Purpose code set is classified by the purpose, for example commercial, for which the numerous codes within the classification are each described by Name and Definition.
 For example:
-OTCD is classified within the Collateral categorisation, with the Name OTC Derivatives described as a Cash collateral related to over-the-counter (OTC) Derivatives - in general for example contracts which are traded and privately negotiated.
+OTCD is classified within the Collateral categorisation, with the **Name** OTC Derivatives described as a Cash collateral related to over-the-counter (OTC) Derivatives - in general for example contracts which are traded and privately negotiated.
 
 ---
 
@@ -7690,7 +7713,7 @@ The pacs message **Payment Identification** provides a set of elements to identi
 
 | Instruction Identification | Min 1 – Max 1 |
 | --- | --- |
-| End-to-End Identification | Min 1 – Max 1 |
+| End to End Identification | Min 1 – Max 1 |
 | UETR | Min 0 – Max 1 |
 
 a **point-to-point reference** restricted in CBPR+ to 16 character and directly comparable with the Sender's Reference (Field 20) of the legacy MT payment message.
@@ -7710,7 +7733,8 @@ The pacs message **Payment Identification** also provides a set of optional elem
 | --- | --- |
 | | an end-to-end reference assigned by the first Instructing Agent to identify the transaction. |
 
-| | Clearing System Reference (Min 0 - Max 1) |
+| Payment Identification | Clearing System Reference (Min 0 - Max 1) |
+| --- | --- |
 | | a point-to-point reference populated by a Payment Market Infrastructure, typically to the settlement leg of a clearing system transaction as a reference to the settled clearing transaction. |
 
 ---
@@ -7720,10 +7744,10 @@ The pacs message **Payment Type Information** provides a set of optional element
 
 | Element | Description |
 | --- | --- |
-| **Instruction Priority**<br>(Min 0 – Max 1) | A nested element which may either use an external ISO Service Level code* or a proprietary code. It is used to identify a particular agreed service level which should be applied to the payment. |
-| **Service Level**<br>(Min 0 – Max 3) | A choice of imbedded codes representing the urgency considered by the Instructing Agent, this point-to-point information may be used by the Instructed Agent to differentiate the processing priority. |
-| **Local Instrument**<br>(Min 0 – Max 1) | A nested element which may either use an external ISO Local Instrument code or a proprietary code. It is used to identify the type of payment local instrument such as a Standing Order. |
-| **Clearing Channel**<br>(Min 0 – Max 1) | Note: the ISO instrument codes are registered by specific community group (captured in the code list) |
+| **Instruction Priority**<br>Min 0 – Max 1 | A nested element which may either use an external ISO Service Level code* or a proprietary code. It is used to identify a particular agreed service level which should be applied to the payment. |
+| **Service Level**<br>Min 0 – Max 3 | A choice of imbedded codes representing the urgency considered by the Instructing Agent, this point-to-point information may be used by the Instructed Agent to differentiate the processing priority. |
+| **Local Instrument**<br>Min 0 – Max 1 | A nested element which may either use an external ISO Local Instrument code or a proprietary code. It is used to identify the type of payment local instrument such as a Standing Order. |
+| **Clearing Channel**<br>Min 0 – Max 1 | Note: the ISO instrument codes are registered by specific community group (captured in the code list) |
 | **Category** | A nested element which may either use an external ISO Category Purpose code or a proprietary code. It is used to identify the purpose of the payment, for example, PPD (Payment Processing Document). |
 
 A choice of imbedded codes representing the clearing channel to be used to process direct debits.
@@ -7978,9 +8002,9 @@ The ISO 20022 pacs messages describe the party debited for a transaction as the 
 | Country Sub Division |
 | Country |
 
-Mandatory **Name** (where a BIC identifier is not provided) by which the party is known
+**Mandatory Name (where a BIC identifier is not provided) by which the party is known**
 
-Nested element capturing either structured or unstructured Debtor address details
+Nested element capturing either structured or unstructured **Debtor** address details
 
 Nested element capturing the various types of identifiers for the party e.g. BIC, LEI etc.
 
@@ -8439,13 +8463,14 @@ Related Account uses a variety of common elements described in more detail withi
 <!-- ELEMENT 554 -->
 The Bank to Customer Account Report message **Interest** provides interest information that applies to the account.
 
-| Type | An element which may either use an embedded ISO Interest Type code; INDY (Intraday) OVRN (Over Night) or a proprietary code. It is used to identify a particular interest type. |
-| --- | --- |
-| Rate | The type of interest Rate defined as a **Percentage** and in an Other form. Validity Range optionally defines an Amount, Credit Debit Indicator and Currency. |
-| From To Date | The date range for which interest has been calculated. From Date Time and To Date Time must be representing when using this element. |
-| Reason | The optional Reason for which interest is applied. |
+| Interest |
+| --- |
 
-The Bank to Customer Account Report message **Interest** provides details on any tax applied to the Interest. Where optional
+- **Type**: An element which may either use an embedded ISO **Interest Type code; INDY (Intraday) OVRN (Over Night)** or a proprietary code. It is used to identify a particular interest type.
+- **Rate**: The type of interest Rate defined as a **Percentage** and in an **Other form. Validity Range optionally defines an Amount, Credit Debit Indicator and Currency.**
+- **From To Date**: The date range for which interest has been calculated. **From Date Time and To Date Time must be representing when using this element.**
+- **Reason**: The optional Reason for which interest is applied.
+- **Tax**: Provides details on any tax applied to the Interest. Where optional
 
 ---
 
@@ -8551,19 +8576,15 @@ Indicates whether the entry is a result of a reversal, for example, an entry rel
 # Mandatory element representing the status using an external ISO Entry Status code for example BOOK is used to confirm the entry is booked.
 
 ## Booking Date
-
 Mandatory choice of **Date or Date Time** the entry was posted to the **Account**. This can be compared to Field 61 subfield 2 of the legacy MT 942.
 
 ## Value Date
-
 Mandatory choice of **Date or Date Time** the entry become available. This can be compared to Field 61 subfield 1 of the legacy MT 942.
 
 ## Account Servicer Reference
-
 Additional optional Reference typically assigned by the Account Servicer's payment engine or accounting platform. This reference would be used to query an entry. This can be compared to Field 61 subfield 8 of the legacy MT 942.
 
 # Availability
-
 Indicates when the booked amount is available i.e., when it is available to be accessed.
 
 ---
@@ -8641,9 +8662,6 @@ All codes in light grey are defined as the generic codes available for all Domai
 ## Payments
 - Received Credit Transfers
   * Cross-Border Credit Transfer
-    + PMNT (Payment)
-      - ICDT (Issued Credit Transfer)
-        * XBCT (Cross-Border Credit Transfer)
 
 Bank Transaction Codes are an external code set defined in the Bank Transaction Code combinations external code sets.
 
@@ -8677,20 +8695,25 @@ Optional nested element to provide information on charges either pre-advised or 
 
 <!-- ELEMENT 566 -->
 ```markdown
-**Technical Input Channel**
-- Optional element which may either use an external ISO Technical Input Channel code or a proprietary code used to represent the technical channel used to input the entry.
+## Technical Input Channel
 
-**Interest**
-- Optional nested element detailing any interest accrued as part of an aggregated (consolidated) entry amount.
+Optional element which may either use an external ISO Technical Input Channel code or a proprietary code used to represent the technical channel used to input the entry.
 
-**Card Transactions**
-- Optional nested element which provides details associated with a card transaction such as the card number, card brand etc.
+## Interest
 
-**Entry Details**
-- Additional optional nested element containing details on the entry. See dedicated section on Entry Details.
+Optional nested element detailing any interest accrued as part of an aggregated (consolidated) entry amount.
 
-**Additional Statement Information**
-- Additional optional element to represent further information related to the account statement.
+## Card Transactions
+
+Optional nested element which provides details associated with a card transaction such as the card number, card brand etc.
+
+## Entry Details
+
+Additional optional nested element containing details on the entry. See dedicated section on **Entry Details**.
+
+## Additional Statement Information
+
+Additional optional element to represent further information related to the account statement.
 
 ---
 
@@ -9032,14 +9055,16 @@ Unique reference assigned by the account servicer to unambiguously identify the 
 <!-- ELEMENT 592 -->
 The Bank to Customer Statement message **Statement Pagination** element provides the page number of the statement.
 
-| Statement Pagination | Min 1 – Max 1 |
+Statement Pagination includes the Page Number and Last Page indicator elements.
+For example a Page Number of 2 represents the current account statement, being the second page of the and implying a previous account statement page had been sent. The Last Page indicator further implies whether more pages are expected
+
+Note: Where Page Number is equal to 1 a Balance Type OPBD (Opening Booked) must be provided, without a sub type of INTM (Interim). Whereas if the Page Number is greater than 1 a Balance Type OPBD (Opening Booked) must be provided, with a sub type of INTM (Interim).
+Where Last Page Indicator is true a Balance Type CLBD (Closing Booked) must be provided, without a sub type of INTM (Interim). Whereas if the Last Page Indicator is false a Balance Type CLBD (Closed Booked) must be provided, with a sub type of INTM (Interim).
+
+
+| Min 1 – Max 1 | Min 1 – Max 1 |
 | --- | --- |
-| Page Number | Min 1 – Max 1 |
-| Last Page indicator | Min 1 – Max 1 |
-
-For example a *Page Number* of 2 represents the current account statement, being the second page of the and implying a previous account statement page had been sent. The *Last Page indicator*further implies whether more pages are expected
-
-Note: Where Page Number is equal to 1 a Balance Type OPBD (Opening Booked) must be provided, without a sub type of INTM (Interim). Whereas if the Page Number is greater than 1 a Balance Type OPBD (Opening Booked) must be provided, with a sub type of INTM (Interim). Where Last Page Indicator is true a Balance Type CLBD (Closing Booked) must be provided, without a sub type of INTM (Interim). Whereas if the Last Page Indicator is false a Balance Type CLBD (Closed Booked) must be provided, with a sub type of INTM (Interim).
+| Statement Pagination includes the Page Number and Last Page indicator elements. For example a Page Number of 2 represents the current account statement, being the second page of the and implying a previous account statement page had been sent. The Last Page indicator further implies whether more pages are expected | Note: Where Page Number is equal to 1 a Balance Type OPBD (Opening Booked) must be provided, without a sub type of INTM (Interim). Whereas if the Page Number is greater than 1 a Balance Type OPBD (Opening Booked) must be provided, with a sub type of INTM (Interim). Where Last Page Indicator is true a Balance Type CLBD (Closing Booked) must be provided, without a sub type of INTM (Interim). Whereas if the Last Page Indicator is false a Balance Type CLBD (Closed Booked) must be provided, with a sub type of INTM (Interim). |
 
 ---
 
@@ -9239,7 +9264,7 @@ The final optional nested element within Balance is the Availability of the book
 | Credit Line |  |
 | Amount |  |
 
-The Credit Line element is unlimited (Max *) whereby more than one Credit Line may be reported, the Date becomes an important element to distinguish between different Credit Lines.
+The Credit Line element is unlimited (Max *) whereby more that one Credit Line may be reported, the Date becomes an important element to distinguish between different Credit Lines.
 
 ---
 
@@ -9389,9 +9414,6 @@ All codes in light grey are defined as the generic codes available for all Domai
 ## Payments
 - Received Credit Transfers
   * Cross-Border Credit Transfer
-    + PMNT (Payment)
-      - ICDT (Issued Credit Transfer)
-        * XBCT (Cross-Border Credit Transfer)
 
 Bank Transaction Codes are an external code set defined in the Bank Transaction Code combinations external code sets.
 
@@ -9837,7 +9859,7 @@ All CBPR+ time elements need offset against UTC. Milliseconds are optional.
 ---
 
 <!-- ELEMENT 647 -->
-The Bank to Customer Debit Credit Notification message **From Date** allows the Account Servicer to specify the start date time and end date time applicable to the notification.
+The Bank to Customer Debit Credit Notification message **From To Date** allows the Account Servicer to specify the start date time and end date time applicable to the notification.
 Where **From to Date** is used the **From Date Time** and **To Date Time** become mandatory elements.
 
 CBPR+ usage guidelines mandate the time zone that the time represents as an offset against Universal Time Coordinated (UTC):
@@ -10014,25 +10036,32 @@ Bank Transaction Codes are an external code set defined in the Bank Transaction 
 | Issued Credit Transfers | Payable Credit Transfers are instructions to transfer an amount of money by the account owner. The payable credit transfers are related to instructions sent by the account owner. |
 | Received Cash Concentration | Transaction is related to incoming cash movements that are related to cash management activities initiated by the owner of the sending account to optimise the return on available funds. |
 | Issued Cash Concentration | Transaction is related to outgoing cash movements that are related to cash management activities initiated by the owner of the account to optimise the return on the available funds. |
-| Received Direct Debits | The Received Direct Debit transactions are related to instructions received by the account owner to collect an amount from a debtor account. |
-| Issued Direct Debits | The Issued Direct Debit transactions are related to instructions sent by the account owner to collect an amount from the cheque drawer. |
-| Received Cheques | Transaction is related to a transaction between two different accounts within the same bank. |
-| Issued Cheques | Transaction is a standing order. A standing order is an instruction given by a party having authority on the debtor's account to debit, i.e., either debit account owner or originating payment service user, to process credit transfers at specified intervals during an implicit or explicit period of time. It is valid for an open or closed period of time. |
-| Cross-Border Standing Order | Transaction is a cross-border standing order. |
-| SEPA Credit Transfer | Transaction is a SEPA credit transfer. |
-| Domestic Credit Transfer | Transaction is an in-country domestic currency credit transfer. |
-| Cross-Border Credit Transfer | Transaction is a cross-border credit transfer. |
-| Credit Transfer with agreed Commercial Information | Transaction is a credit transfer including commercial information, i.e., additional information agreed between the sender and the receiver. |
-| Interbank Transaction | Transaction is a financial institution credit transfer, i.e., the debtor and creditor are financial institutions. |
-| Credit Transfer | Transaction is a credit transfer defined with higher priority, e.g., a PRIEURO credit transfer. |
-| Priority Credit Transfer | Transaction is related to the payment of a payroll salary. |
-| Payroll Salary Payment | Transaction is related to the payment of a cross-border payroll salary. |
+| Received Direct Debits | The Received Direct Debit transactions are related to instructions received by the account owner. |
+| Issued Direct Debits | The Issued Direct Debit transactions are related to instructions sent by the account owner to collect an amount from a debtor account. |
+| Received Cheques | Transaction is related to cheques drawn on accounts within the same bank. |
+| Issued Cheques | Transaction is related to cheques drawn on accounts in another country. |
 
 ## Sub-Families for both Received and Issued Credit Transfers
 
 | Description | Definition |
 |-------------|------------|
-| Internal Book Transfer | Transaction is an internal book transfer between two different accounts within the same bank. |
+| Internal Book Transfer | Transaction is a transfer between two different accounts within the same bank. |
+| Standing Order | Transaction is a standing order. A standing order is an instruction given by a party having authority on the debtor's account to debit, i.e., either debit account owner or originating payment service user, process credit transfers at specified intervals during an implicit or explicit period of time. It is usually used for an open or closed period of time. |
+| Cross-Border Standing Order | Transaction is a cross-border standing order. |
+| SEPA Credit Transfer | Transaction is a SEPA credit transfer. |
+| Domestic Credit Transfer | Transaction is an in-country domestic currency credit transfer. |
+| Cross-Border Credit Transfer | Transaction is a cross-border credit transfer. |
+| Credit Transfer with agreed Commercial Information | Transaction is a credit transfer including commercial information, i.e., additional information agreed between the sender and the receiver. |
+| Interbank Transfer | Transaction is a transaction between two financial institutions. |
+| Financial Institution Credit Transfer | Transaction is a financial institution credit transfer, i.e., the debtor and creditor are financial institutions. |
+| Credit Transfer | Transaction is a credit transfer defined with higher priority, e.g., a PRIEURO credit transfer. |
+| Priority Credit Transfer | Transaction is related to the payment of a payroll salary. |
+| Payroll Salary Payment | Transaction is related to the payment of a cross-border payroll salary. |
+| Cross-Border | Transaction is related to the payment of a cross-border payroll salary. |
+
+The description of **Bank Transaction Codes** are available to download from the ISO20022.org external code list page. These include the descriptions for Payments Domain Families and sub-families for both Received and Issued Credit Transfers.
+
+[https://www.iso20022.org/external_code_list.page](https://www.iso20022.org/external_code_list.page)
 
 ---
 
@@ -10103,9 +10132,9 @@ Additional optional element to represent further information related to the acco
 ---
 
 <!-- ELEMENT 663 -->
-The Bank to Customer Debit Credit Notification message optional **Entry Details** provides a variety of nested elements to represent the details associated with each **Entry**.
+The Bank to Customer Debit Credit Notification message optional **Entry Details** provides a variety of nested elements to represent the details associated with each *Entry*.
 
-Batch provides details on batched transactions such as the total **Number of Transactions** the batched entry (sometimes referred to as a consolidated entry) represents. **Transaction Details** is a significant nested element which represents information on the underlying transaction.
+Batch provides details on batched transactions such as the total Number of Transactions the batched entry (sometimes referred to as a consolidated entry) represents. Transaction Details is a significant nested element which represents information on the underlying transaction.
 
 ---
 
@@ -10391,14 +10420,8 @@ The **Account Owner** is the Creditor, and the **Account Servicer** is the Credi
 
 The **Account Owner** must be identified either by the Party name and postal address or as an Agent using a Financial Institution identification. The **Account Servicer** must be identified as an Agent by using the Financial Institution identification.
 
-| Min 0 – Max 1 | Min 0 – Max 1 |
-| --- | --- |
-| The Account Owner is the Creditor, and the Account Servicer is the Creditor Agent. They are static roles in the camt.057 Notification to Receive. |  |
-| The Account Owner must be identified either by the Party name and postal address or as an Agent using a Financial Institution identification. The Account Servicer must be identified as an Agent by using the Financial Institution identification. |  |
 
-The **Account Owner** and the **Account Servicer** are the Creditor and Creditor Agent respectively in a pacs.008 FI to FI Customer. Where utilised, it is recommended to use the element at the Item level.
-
-Notification
+| The Account Owner and the Account Servicer are the Creditor and Creditor Agent respectively in a pacs.008 FI to FI Customer. Where utilised, it is recommended to use the element at the Item level. |
 
 ---
 
@@ -10454,6 +10477,11 @@ The Notification to Receive message describes the Party or Agent that owes the a
 | Floor |
 | Post Box |
 | Room |
+| Post Code |
+| Town Name |
+| Town Location Name |
+| District Name |
+| Country Sub Division |
 | Postal Address |
 
 The BIC which identifies the Debtor
@@ -10551,7 +10579,7 @@ Use Case c.57.1.4 – Notification to Receive (camt.057) for a FI Credit Transfe
 1. **Debtor initiates a payment instruction to the Debtor Agent**
 2a. **Debtor Agent (A) initiates a payment using the cover method to the Creditor Agent (D)**
 
-2b. In parallel, the Debtor Agent (A) initiates a covering payment to credit the account of Agent (D), which becomes the Creditor of the cover payment (pacs.009 cov). Agent A's role also changes in the cover payment where it becomes the Debtor, whereby Agent B's account will be impacted.
+2b. In parallel, the Debtor Agent (A) initiates a covering payment to credit the account of Agent (D), which becomes the Creditor of the cover payment (pacs.009 cov). Agent A's role also changes in the cover payment where it becomes the Debtor, whereby Agent B is credited with their original debt.
 
 3. Upon receipt of the pacs.008 advising settlement will occur via a cover payment. Agent D sends a Notification to Receive to Agent C.
 4. Agent B processes the payment on to Agent C.
@@ -10710,8 +10738,8 @@ Unique reference assigned by the account owner to unambiguously identify the ori
 
 
 | Original Notification | Original Notification Identification |
-|------------------------|--------------------------------------|
-| Min 1 – Max 1         |                                      |
+|-----------------------|--------------------------------------|
+| Min 1 – Max 1        |                                      |
 
 ---
 
@@ -10743,6 +10771,11 @@ The Notification to Receive message describes the Party or Agent that owes the a
 | Floor |
 | Post Box |
 | Room |
+| Post Code |
+| Town Name |
+| Town Location Name |
+| District Name |
+| Country Sub Division |
 | Postal Address |
 
 The BIC which identifies the Debtor
@@ -10858,12 +10891,14 @@ Group Header
 Reporting Request
 
 The Account Reporting Request message is sent by the account owner, either directly or through a forwarding agent, to one of its account servicing institutions.
+
 It is used to ask the account servicing institution to send a report for the account owner's account:
 - BankToCustomerAccountReport (camt.052) or
 - BankToCustomerStatement (camt.053) or
 - BankToCustomerDebitCreditNotification (camt.054).
 
 Account reports are often configured by the Account Servicing Institution as part of a static configuration. The Account Report Request could however be used as an alternative mechanism to request reports on a frequent or ad hoc basis.
+
 Account Report Request can contain multiple Reporting Request elements as the maximum multiplicity is unbounded. This effectively allows multiple
 
 ---
@@ -11385,13 +11420,16 @@ See use case p.8.1.1 for the original payment, c.29.1.1 for case resolution and 
 ---
 
 <!-- ELEMENT 766 -->
+```markdown
 # Credit Transfer (pacs.008)
 
-| Step | Description |
-| --- | --- |
-| **1** | Agent C provides a final outcome of the investigation to Agent B using the camt.029 |
-| **2** | Debtor Agent (B) updates their case history and relays the outcome of the investigation to |
-| **3** | Debtor Agent (A) updates their case history and informs the customer of the outcome of the investigation. |
+| Agent C provides a final outcome of the investigation to Agent B using the camt.029 |
+|---|
+| Debtor Agent (B) updates their case history and relays the outcome of the investigation to |
+
+1. **Agent C** provides a final outcome of the investigation to **Agent B** using the `camt.029`.
+2. **Debtor Agent (B)** updates their case history and relays the outcome of the investigation.
+3. **Debtor Agent (A)** updates their case history and informs the customer of the outcome of the investigation.
 
 See use case p.8.1.1 for the original payment, c.56.1.2 for case resolution and p.4.1.3. for an example payment return
 
@@ -11436,9 +11474,10 @@ See use case p.8.1.1 for the original payment, c.56.1.2 for case resolution and 
 # Transfers (pacs.008) where the cover is returned
 
 | Agent C receives the payment and recognises the payment can not be completed as requested e.g. the Agent D does not maintain an account with them. |
-| --- | --- |
-| 1 | Debtor Agent (A) assigns a Cancellation Request to Agent D (assignee) requesting the original pacs.008 is considered null and void, using reason code COVR. |
-| 2 | Agent D creates an investigation case. Recognising the cover payment will not be received to settle the pacs.008. As the creditor has not been credited in advance of cover settlement, a final resolution to the investigation can be provided. A payment return is not necessary. |
+| --- |
+| **1** Debtor Agent (A) assigns a Cancellation Request to Agent D (assignee) requesting the original pacs.008 is considered null and void, using reason code COVR. |
+
+| Agent D creates an investigation case. Recognising the cover payment will not be received to settle the pacs.008. As the creditor has not been credited in advance of cover settlement, a final resolution to the investigation can be provided. A payment return is not necessary. |
 
 ---
 
@@ -11461,11 +11500,15 @@ See use case p. 9.1.1 for the cover payment sample, c.56.3.1 for case resolution
 ```markdown
 # Credit Transfer advice (pacs.009 adv)
 
-| Step | Description |
-| --- | --- |
-| 1 | Debtor request their bank to recall a previous instructed payment, as the amount was incorrect. |
-| 2 | Debtor Agent (A) assigns a Cancellation Request to Agent E (assignee) requesting the original pacs.008 is returned, using reason code AM09. |
-| 3 | Agent E creates an investigation case. Recognising the payment has already been credited to the creditor. They request debit authority, proving the reason specified for the return request and update Agent B. Once the outcome to the debit authorisation is known a final resolution to the investigation can be relayed and any necessary |
+| A | B | C | D | E | F |
+|---|---|---|---|---|---|
+| camt.056 | camt.029 | pacs.009 | pacs.002 | camt.053 | camt.054 |
+
+1. Debtor request their bank to recall a previous instructed payment, as the amount was incorrect.
+2. Debtor Agent (A) assigns a Cancellation Request to Agent E (assignee) requesting the original pacs.008 is returned, using reason code AM09.
+3. Agent E creates an investigation case. Recognising the payment has already been credited to the creditor. They request debit authority, proving the reason specified for the return request and update Agent B.
+
+See use case p.9.1.2 for the cover payment sample c.56.4.1 for case resolution and p.4.2.3 for payment return
 
 ---
 
@@ -11675,14 +11718,8 @@ One of the following elements is also required depending on the Date element in 
 
 The following element is optional:
 
-| Underlying > Original Payment Information and Cancellation |
+| Underlying Payment Information and Cancellation Transaction Information |
 | --- |
-| Transaction Information > |
-| > Original Instruction Identification |
-| > Original End to End Identification |
-| > Original UETR |
-| > Original Instructed Amount |
-| > Original Requested Execution Date |
 
 ---
 
@@ -12482,7 +12519,7 @@ The **Effective Date** is an optional element, it is used to capture the origina
 <!-- ELEMENT 857 -->
 The Cheque Cancellation or Stop Request **Drawer Agent** optionally captures the Agent who the cheque has been drawn on. This Agent is typically also the Agent from who the Cheque Presentment Notification is sent to the **Drawee Agent**.
 
-The **Drawer Agent Account** optionally captures the Drawer Agent's Account with the Drawee Agent and who would receive an order the pay the cheque upon presentment.
+The **Drawer Agent Account** optionally captures the Drawer Agent's Account with the **Drawee Agent** and who would receive an order the pay the cheque upon presentment.
 
 | DRAWEE AGENT ID | DRAWER AGENT ACCOUNT 123 |
 |-----------------|----------------------------|
@@ -12693,7 +12730,7 @@ The **Effective Date** is an optional element, it is used to capture the origina
 <!-- ELEMENT 877 -->
 The Cheque Cancellation or Stop Request **Drawer Agent** optionally captures the Agent who the cheque has been drawn on. This Agent is typically also the Agent from who the Cheque Presentment Notification is sent to the **Drawee Agent**.
 
-The **Drawer Agent Account** optionally captures the Drawer Agent's Account with the Drawee Agent and who would receive an order the pay the cheque upon presentment.
+The **Drawer Agent Account** optionally captures the Drawer Agent's Account with the **Drawee Agent** and who would receive an order the pay the cheque upon presentment.
 
 | DRAWEE AGENT ID | DRAWER AGENT ACCOUNT 123 |
 |-----------------|----------------------------|
