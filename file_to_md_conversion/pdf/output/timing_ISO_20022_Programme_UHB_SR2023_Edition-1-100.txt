@@ -1,0 +1,59 @@
+Raport przetwarzania pliku: data/ISO_20022_Programme_UHB_SR2023_Edition-1-100.pdf
+GPU Monitorowane: Nie (Brak GPU NVIDIA lub biblioteki pynvml)
+============================================================
+Parser: markerLlm
+  Czas wykonania:          3584.2012 s
+  Liczba elementów:        1
+  Liczba znaków:           635658
+  RAM (Peak Process):      5000.18 MB
+  CPU (Avg Process):       2.01 %
+  CPU (Peak Process):      1970.60 %
+----------------------------------------
+Parser: doclingLlm
+  Czas wykonania:          2576.5705 s
+  Liczba elementów:        100
+  Liczba znaków:           471919
+  RAM (Peak Process):      5847.12 MB
+  CPU (Avg Process):       1.55 %
+  CPU (Peak Process):      698.00 %
+----------------------------------------
+Parser: llmstudio
+  Czas wykonania:          499.0236 s
+  Liczba elementów:        100
+  Liczba znaków:           82105
+  RAM (Peak Process):      5711.73 MB
+  CPU (Avg Process):       0.77 %
+  CPU (Peak Process):      39.90 %
+----------------------------------------
+Parser: pymupdf4llm
+  Czas wykonania:          6.7304 s
+  Liczba elementów:        95
+  Liczba znaków:           95021
+  RAM (Peak Process):      5713.83 MB
+  CPU (Avg Process):       1472.51 %
+  CPU (Peak Process):      1999.90 %
+----------------------------------------
+Parser: kreuzberg
+  Czas wykonania:          0.8355 s
+  Liczba elementów:        1
+  Liczba znaków:           74767
+  RAM (Peak Process):      5770.66 MB
+  CPU (Avg Process):       258.34 %
+  CPU (Peak Process):      658.20 %
+----------------------------------------
+Parser: docling
+  Czas wykonania:          16.9198 s
+  Liczba elementów:        92
+  Liczba znaków:           63914
+  RAM (Peak Process):      6414.11 MB
+  CPU (Avg Process):       175.26 %
+  CPU (Peak Process):      638.40 %
+----------------------------------------
+Parser: marker
+  Czas wykonania:          25.9184 s
+  Liczba elementów:        1
+  Liczba znaków:           93583
+  RAM (Peak Process):      6932.04 MB
+  CPU (Avg Process):       164.48 %
+  CPU (Peak Process):      1985.30 %
+----------------------------------------

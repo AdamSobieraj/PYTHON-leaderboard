@@ -222,13 +222,13 @@ def process_pdf_to_test_folders(pdf_path: str):
         return
 
     parsers = {
+        "markerLlm": MarkerParserLlm,
+        "doclingLlm": DoclingParserLlm,
+        "llmstudio" : LmStudioParser,
         "pymupdf4llm": PyMuPdfParser,
         "kreuzberg": KreuzbergParser,
         "docling": DoclingParser,
-        "marker" : MarkerParser,
-        "llmstudio" : LmStudioParser,
-        "markerLlm": MarkerParserLlm,
-        "doclingLlm": DoclingParserLlm
+        "marker" : MarkerParser
     }
 
     timing_results = []
@@ -285,7 +285,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         target_pdf = sys.argv[1]
     else:
-        target_pdf = "data/ISO_20022_Programme_UHB_SR2023_Edition.pdf"
+        target_pdf = "data/ISO_20022_Programme_UHB_SR2023_Edition-1-100.pdf"
         print(f"Nie podano pliku w argumencie. Używam domyślnego: {target_pdf}")
 
     process_pdf_to_test_folders(target_pdf)
