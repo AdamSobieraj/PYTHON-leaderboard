@@ -1,7 +1,7 @@
 import sys
 
 LLM_BASE_URL = "http://192.168.50.112:1234/v1"
-LLM_MODEL = "Qwen2.5-vl-7B-Instruct"
+LLM_MODEL = "gemma-4-31b"
 
 import io
 import logging
