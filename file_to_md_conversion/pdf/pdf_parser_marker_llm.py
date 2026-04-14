@@ -2,8 +2,9 @@ import base64
 import io
 import logging
 import os
+import re
 import time
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Dict
 
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
@@ -26,7 +27,7 @@ LLM_API_KEY = "not-needed"
 
 class PdfParser(BaseDocumentParser):
     """
-    Parser PDF oparty na Marker (0.3.1+) z analizą Vision
+    Parser PDF oparty na Marker (0.3.1+) z analizą Vision (Qwen2.5-vl)
     i konfigurowalnymi filtrami obrazów.
     """
 
@@ -34,15 +35,19 @@ class PdfParser(BaseDocumentParser):
         logger.info("Inicjalizacja modeli Marker (API 0.3.x)...")
         start_init = time.time()
 
-        # Ładowanie modeli lokalnych
         self.model_dict = create_model_dict()
         self.converter = PdfConverter(artifact_dict=self.model_dict)
 
-        # Konfiguracja filtrów obrazów
         self._filters_config = {
             'size': {
                 'enabled': True,
                 'min_image_size': 10000,
+            },
+            'position': {
+                'enabled': False,
+                'header_margin': 0.15,
+                'footer_margin': 0.10,
+                'supported': False,
             },
             'aspect_ratio': {
                 'enabled': True,
@@ -52,16 +57,15 @@ class PdfParser(BaseDocumentParser):
             }
         }
 
-        # Statystyki filtrowania
         self._filter_stats = {
             'total_images': 0,
             'accepted': 0,
             'rejected_size': 0,
+            'rejected_position': 0,
             'rejected_aspect_ratio': 0,
             'rejected_no_image': 0,
         }
 
-        # Konfiguracja promptu
         self._vision_prompt_template = None
 
         logger.info(f"Konfiguracja LLM: {LLM_MODEL}")
@@ -74,104 +78,82 @@ class PdfParser(BaseDocumentParser):
         )
         logger.info(f"PdfParser gotowy (Inicjalizacja: {time.time() - start_init:.2f}s).")
 
-    # Metody konfiguracji filtra rozmiaru
     def configure_size_filter(self, enabled: bool = True, min_image_size: int = 10000):
-        """
-        Konfiguruje filtr rozmiaru obrazu.
-
-        Args:
-            enabled: Czy filtr jest włączony
-            min_image_size: Minimalna powierzchnia obrazu w pikselach
-        """
         self._filters_config['size']['enabled'] = enabled
         self._filters_config['size']['min_image_size'] = min_image_size
         logger.info(f"Filtr rozmiaru: {'WŁĄCZONY' if enabled else 'WYŁĄCZONY'}, min_size={min_image_size}px")
         return self
 
     def disable_size_filter(self):
-        """Wyłącza filtr rozmiaru."""
         self._filters_config['size']['enabled'] = False
         logger.info("Filtr rozmiaru: WYŁĄCZONY")
         return self
 
-    # Metody konfiguracji filtra proporcji
-    def configure_aspect_ratio_filter(
-            self,
-            enabled: bool = True,
-            min_aspect_ratio: float = 0.3,
-            max_aspect_ratio: float = 5.0,
-            square_logo_threshold: int = 20000
-    ):
-        """
-        Konfiguruje filtr proporcji obrazu.
+    def configure_position_filter(self, enabled: bool = True, header_margin: float = 0.15, footer_margin: float = 0.10):
+        if enabled:
+            logger.warning("UWAGA: Filtr pozycji nie jest wspierany przez parser Marker.")
+            enabled = False
+        self._filters_config['position']['enabled'] = enabled
+        self._filters_config['position']['header_margin'] = header_margin
+        self._filters_config['position']['footer_margin'] = footer_margin
+        return self
 
-        Args:
-            enabled: Czy filtr jest włączony
-            min_aspect_ratio: Minimalna proporcja szerokość/wysokość
-            max_aspect_ratio: Maksymalna proporcja szerokość/wysokość
-            square_logo_threshold: Próg powierzchni dla kwadratowych logo
-        """
+    def disable_position_filter(self):
+        self._filters_config['position']['enabled'] = False
+        logger.info("Filtr pozycji: WYŁĄCZONY")
+        return self
+
+    def configure_aspect_ratio_filter(self, enabled: bool = True, min_aspect_ratio: float = 0.3,
+                                      max_aspect_ratio: float = 5.0, square_logo_threshold: int = 20000):
         self._filters_config['aspect_ratio']['enabled'] = enabled
         self._filters_config['aspect_ratio']['min_aspect_ratio'] = min_aspect_ratio
         self._filters_config['aspect_ratio']['max_aspect_ratio'] = max_aspect_ratio
         self._filters_config['aspect_ratio']['square_logo_threshold'] = square_logo_threshold
-        logger.info(f"Filtr proporcji: {'WŁĄCZONY' if enabled else 'WYŁĄCZONY'}, "
-                    f"ratio={min_aspect_ratio}-{max_aspect_ratio}")
+        logger.info(
+            f"Filtr proporcji: {'WŁĄCZONY' if enabled else 'WYŁĄCZONY'}, ratio={min_aspect_ratio}-{max_aspect_ratio}")
         return self
 
     def disable_aspect_ratio_filter(self):
-        """Wyłącza filtr proporcji."""
         self._filters_config['aspect_ratio']['enabled'] = False
         logger.info("Filtr proporcji: WYŁĄCZONY")
         return self
 
-    # Metody globalne
     def disable_all_filters(self):
-        """Wyłącza wszystkie filtry - wszystkie obrazy będą analizowane."""
         self._filters_config['size']['enabled'] = False
+        self._filters_config['position']['enabled'] = False
         self._filters_config['aspect_ratio']['enabled'] = False
         logger.info("Wszystkie filtry: WYŁĄCZONE")
         return self
 
     def enable_all_filters(self):
-        """Włącza wszystkie filtry z domyślnymi ustawieniami."""
         self._filters_config['size']['enabled'] = True
         self._filters_config['aspect_ratio']['enabled'] = True
-        logger.info("Wszystkie filtry: WŁĄCZONE")
+        logger.info("Wszystkie filtry: WŁĄCZONE (poza filtrem pozycji)")
         return self
 
     def get_filters_config(self) -> dict:
-        """Zwraca aktualną konfigurację filtrów."""
         return self._filters_config.copy()
 
     def get_filter_stats(self) -> dict:
-        """Zwraca statystyki filtrowania obrazów."""
         return self._filter_stats.copy()
 
     def reset_filter_stats(self):
-        """Resetuje statystyki filtrowania."""
         self._filter_stats = {
             'total_images': 0,
             'accepted': 0,
             'rejected_size': 0,
+            'rejected_position': 0,
             'rejected_aspect_ratio': 0,
             'rejected_no_image': 0,
         }
         return self
 
     def set_vision_prompt(self, prompt: str):
-        """
-        Ustawia własny prompt dla analizy obrazów przez VLM.
-
-        Args:
-            prompt: Tekst promptu, który zostanie wysłany do modelu wizyjnego
-        """
         self._vision_prompt_template = prompt
         logger.info("Ustawiono niestandardowy prompt dla VLM")
         return self
 
     def reset_vision_prompt(self):
-        """Resetuje prompt do wartości domyślnej."""
         self._vision_prompt_template = None
         logger.info("Przywrócono domyślny prompt dla VLM")
         return self
@@ -185,60 +167,80 @@ class PdfParser(BaseDocumentParser):
         temp_file = None
 
         try:
-            # Przygotowanie ścieżki do pliku
             if isinstance(file_source, str):
                 pdf_path = file_source
             else:
                 temp_file = self._save_temp_file(file_source)
                 pdf_path = temp_file
 
-            # 1. KONWERSJA MARKER
-            logger.info(f"[{source_name}] Uruchamiam silnik Marker...")
+            logger.info(f"Uruchamiam silnik Marker...")
             conv_start = time.time()
 
             rendered = self.converter(pdf_path)
-
             full_markdown = getattr(rendered, "markdown", "")
             extracted_images = getattr(rendered, "images", {})
 
-            logger.info(f"[{source_name}] Ekstrakcja zakończona w {time.time() - conv_start:.2f}s.")
-            logger.info(f"[{source_name}] Znaleziono {len(extracted_images)} obrazów.")
+            logger.info(f"Ekstrakcja zakończona w {time.time() - conv_start:.2f}s.")
+            logger.info(f"Znaleziono {len(extracted_images)} obrazów.")
 
-            # 2. PODZIAŁ NA STRONY
             pages_raw = full_markdown.split("\f")
             total_pages = len(pages_raw)
-            logger.info(f"[{source_name}] Wykryto {total_pages} stron.")
+            logger.info(f"Wykryto {total_pages} stron.")
 
             final_documents = []
             max_pages_to_process = kwargs.get('max_pages', 999)
 
-            # 3. ANALIZA STRON I WIZJI
+            # PRZETWARZANIE KAŻDEJ STRONY
             for i, page_content in enumerate(pages_raw):
                 page_no = i + 1
                 content = page_content.strip()
                 if not content:
                     continue
 
-                logger.info(f"  -> Przetwarzanie strony {page_no}/{total_pages}...")
+                logger.info(f"Przetwarzanie strony {page_no}/{total_pages}...")
 
-                # SZUKANIE I ANALIZA OBRAZÓW
-                image_descriptions = []
-                for img_name, pil_img in extracted_images.items():
-                    if img_name in content:
-                        self._filter_stats['total_images'] += 1
+                # ZNAJDŹ WSZYSTKIE REFERENCJE DO OBRAZÓW wraz z całym markdown
+                # Wzorzec: ![dowolny tekst](ścieżka)
+                image_pattern = r'(!\[.*?\]\(([^)]+)\))'
+                matches = re.findall(image_pattern, content)
 
-                        if self._should_process_image(pil_img, img_name):
-                            self._filter_stats['accepted'] += 1
-                            logger.info(f"     [VISION] Analizuję grafikę '{img_name}'...")
-                            vlm_start = time.time()
-                            desc = self._analyze_image_with_vlm(pil_img)
-                            logger.info(f"     [VISION] OK ({time.time() - vlm_start:.2f}s)")
-                            image_descriptions.append(f"\n{desc}\n")
+                logger.info(f"  Znaleziono {len(matches)} referencji do obrazów")
+
+                # PRZETWARZAJ KAŻDĄ REFERENCJĘ
+                for full_markdown_ref, img_path in matches:
+                    # full_markdown_ref to np: '![](image.jpg)' lub '![alt text](image.jpg)'
+                    # img_path to np: '_page_0_Picture_0.jpeg'
+
+                    logger.debug(f"  -> Referencja: '{full_markdown_ref}' -> ścieżka: '{img_path}'")
+
+                    # Szukaj obrazu
+                    pil_img = self._find_image(img_path, extracted_images)
+
+                    if pil_img is None:
+                        logger.debug(f"     NIE znaleziono obrazu PIL dla '{img_path}'")
+                        continue
+
+                    self._filter_stats['total_images'] += 1
+
+                    # Sprawdź filtry
+                    if self._should_process_image(pil_img, img_path):
+                        self._filter_stats['accepted'] += 1
+                        logger.info(f"     [VISION] Analizuję '{img_path}'...")
+                        vlm_start = time.time()
+                        desc = self._analyze_image_with_vlm(pil_img)
+                        logger.info(f"     [VISION] OK ({time.time() - vlm_start:.2f}s)")
+
+                        # ZAMIEŃ DOKŁADNĄ REFERENCJĘ (z alt textem jeśli jest)
+                        replacement = f'{full_markdown_ref}\n\n{desc}\n'
+
+                        # Użyj replace tylko RAZ dla tej konkretnej referencji
+                        if full_markdown_ref in content:
+                            content = content.replace(full_markdown_ref, replacement, 1)
+                            logger.debug(f"     Wstawiono opis AI po obrazie")
                         else:
-                            logger.debug(f"     [SKIP] Pominięto obraz '{img_name}'")
-
-                if image_descriptions:
-                    content += "\n" + "\n".join(image_descriptions)
+                            logger.warning(f"     BŁĄD: Nie znaleziono '{full_markdown_ref}' w content!")
+                    else:
+                        logger.debug(f"     [SKIP] Obraz odrzucony przez filtry")
 
                 final_documents.append(
                     Document(
@@ -259,93 +261,73 @@ class PdfParser(BaseDocumentParser):
             if temp_file and os.path.exists(temp_file):
                 os.remove(temp_file)
 
-            # Podsumowanie filtrowania
-            logger.info(f"[STATS] Obrazów łącznie: {self._filter_stats['total_images']}")
-            logger.info(f"[STATS] Zaakceptowanych: {self._filter_stats['accepted']}")
-            logger.info(f"[STATS] Odrzuconych - brak obrazu: {self._filter_stats['rejected_no_image']}")
-            logger.info(f"[STATS] Odrzuconych - rozmiar: {self._filter_stats['rejected_size']}")
-            logger.info(f"[STATS] Odrzuconych - proporcje: {self._filter_stats['rejected_aspect_ratio']}")
+            logger.info(f"[STATS] Obrazów: {self._filter_stats['total_images']}, "
+                        f"Przeanalizowanych: {self._filter_stats['accepted']}, "
+                        f"Pominięto: {self._filter_stats['total_images'] - self._filter_stats['accepted']}")
 
             logger.info(f"SUKCES: {source_name} w {time.time() - overall_start:.2f}s.")
             return final_documents
 
         except Exception as e:
-            logger.error(f"KRYTYCZNY BŁĄD parsera MarkerLLM: {e}", exc_info=True)
+            logger.error(f"KRYTYCZNY BŁĄD: {e}", exc_info=True)
             if temp_file and os.path.exists(temp_file):
                 os.remove(temp_file)
             return []
 
-    def _should_process_image(self, pil_img, img_name: str) -> bool:
-        """
-        Główna metoda decydująca czy obraz powinien być wysłany do VLM.
-        Uruchamia wszystkie włączone filtry.
+    def _find_image(self, img_ref: str, extracted_images: Dict) -> Optional[object]:
+        """Szuka obrazu próbując różnych wariantów nazwy."""
+        variants = [
+            img_ref,
+            os.path.basename(img_ref),
+            os.path.splitext(img_ref)[0],
+            os.path.splitext(os.path.basename(img_ref))[0],
+        ]
 
-        Uwaga: Marker nie dostarcza informacji o pozycji obrazu na stronie,
-        więc filtr pozycji nie jest dostępny.
-        """
+        for variant in variants:
+            if variant in extracted_images:
+                return extracted_images[variant]
+
+        # Fuzzy match
+        for key in extracted_images.keys():
+            if img_ref in key or key in img_ref:
+                return extracted_images[key]
+
+        return None
+
+    def _should_process_image(self, pil_img, img_name: str) -> bool:
         try:
             if pil_img is None:
-                logger.debug(f"[REJECT] pil_image is None dla '{img_name}'")
                 self._filter_stats['rejected_no_image'] += 1
                 return False
 
             width, height = pil_img.size
-            logger.debug(f"[DEBUG] Sprawdzam obraz '{img_name}' {width}x{height}px")
 
-            # Filtr 1: Rozmiar obrazu
             if self._filters_config['size']['enabled']:
                 if not self._filter_by_size(pil_img):
                     self._filter_stats['rejected_size'] += 1
                     return False
 
-            # Filtr 2: Proporcje (aspect ratio)
             if self._filters_config['aspect_ratio']['enabled']:
                 if not self._filter_by_aspect_ratio(pil_img):
                     self._filter_stats['rejected_aspect_ratio'] += 1
                     return False
 
-            logger.debug(f"[ACCEPT] Obraz '{img_name}' ({width}x{height}) zaakceptowany do analizy")
             return True
 
         except Exception as e:
-            logger.warning(f"Błąd podczas filtrowania obrazu '{img_name}': {e}", exc_info=True)
+            logger.warning(f"Błąd filtrowania: {e}")
             return False
 
     def _filter_by_size(self, pil_img) -> bool:
-        """
-        Filtruje obrazy po rozmiarze - małe obrazy to często logo.
-
-        Returns:
-            True jeśli obraz jest wystarczająco duży
-            False jeśli obraz jest zbyt mały (prawdopodobnie logo)
-        """
         width, height = pil_img.size
         area = width * height
         min_size = self._filters_config['size']['min_image_size']
-
-        if area < min_size:
-            logger.debug(f"[FILTER_SIZE] Obraz zbyt mały ({width}x{height}={area}px < {min_size}px)")
-            return False
-
-        logger.debug(f"[FILTER_SIZE] OK ({width}x{height}={area}px >= {min_size}px)")
-        return True
+        return area >= min_size
 
     def _filter_by_aspect_ratio(self, pil_img) -> bool:
-        """
-        Filtruje obrazy po proporcjach szerokość/wysokość.
-        Logo często mają charakterystyczne proporcje:
-        - Kwadratowe (aspect ratio ~ 1.0)
-        - Bardzo szerokie bannery (aspect ratio > 5.0)
-        - Bardzo wysokie (aspect ratio < 0.3)
-
-        Returns:
-            True jeśli proporcje wskazują na diagram/schemat
-            False jeśli proporcje wskazują na logo/dekorację
-        """
         width, height = pil_img.size
 
         if height == 0:
-            logger.debug(f"[FILTER_ASPECT] Wysokość = 0")
             return False
 
         aspect_ratio = width / height
@@ -356,23 +338,15 @@ class PdfParser(BaseDocumentParser):
         max_ratio = config['max_aspect_ratio']
         square_threshold = config['square_logo_threshold']
 
-        # Małe kwadratowe obrazy to prawdopodobnie logo
         if 0.8 < aspect_ratio < 1.2 and area < square_threshold:
-            logger.debug(
-                f"[FILTER_ASPECT] Małe kwadratowe logo ({width}x{height}, ratio={aspect_ratio:.2f}, area={area})")
             return False
 
-        # Zbyt wąskie lub szerokie obrazy (bannery, paski)
         if aspect_ratio < min_ratio or aspect_ratio > max_ratio:
-            logger.debug(f"[FILTER_ASPECT] Nieprawidłowe proporcje ({width}x{height}, "
-                         f"ratio={aspect_ratio:.2f} poza zakresem {min_ratio}-{max_ratio})")
             return False
 
-        logger.debug(f"[FILTER_ASPECT] OK ({width}x{height}, ratio={aspect_ratio:.2f})")
         return True
 
     def _analyze_image_with_vlm(self, pil_img) -> str:
-        """Wysyła obrazek do LLM i pobiera jego opis."""
         try:
             if pil_img is None:
                 return "[Błąd: Obraz jest pusty]"
@@ -383,14 +357,8 @@ class PdfParser(BaseDocumentParser):
 
             message = HumanMessage(
                 content=[
-                    {
-                        "type": "text",
-                        "text": self._get_vision_prompt()
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{img_base64}"}
-                    },
+                    {"type": "text", "text": self._get_vision_prompt()},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_base64}"}},
                 ]
             )
 
@@ -398,14 +366,10 @@ class PdfParser(BaseDocumentParser):
             return response.content.strip()
 
         except Exception as e:
-            logger.warning(f"Błąd analizy VLM: {e}")
+            logger.error(f"Błąd analizy VLM: {e}", exc_info=True)
             return f"[Nie udało się przeanalizować obrazu: {str(e)}]"
 
     def _get_vision_prompt(self) -> str:
-        """
-        Zwraca prompt używany do analizy obrazów przez VLM.
-        Wydzielone do osobnej metody dla łatwej edycji.
-        """
         if self._vision_prompt_template:
             return self._vision_prompt_template
 

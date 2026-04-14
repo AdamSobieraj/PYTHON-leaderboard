@@ -285,7 +285,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         target_pdf = sys.argv[1]
     else:
-        target_pdf = "data/ISO_20022_Programme_UHB_SR2023_Edition-1-100.pdf"
+        target_pdf = "data/ISO_20022_Programme_UHB_SR2023_Edition-1-20.pdf"
         print(f"Nie podano pliku w argumencie. Używam domyślnego: {target_pdf}")
 
     process_pdf_to_test_folders(target_pdf)
