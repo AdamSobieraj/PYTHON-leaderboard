@@ -517,37 +517,14 @@ class PdfParser(BaseDocumentParser):
         if self._vision_prompt_template:
             return self._vision_prompt_template
 
-        return """Jesteś ekspertem od dokumentacji technicznej ISO 20022. Przeanalizuj schemat/diagram i wyjaśnij jego znaczenie biznesowe.
-
-TWOJE ZADANIE:
-1. Wyjaśnij CEL i ZNACZENIE tego schematu - co komunikuje, jakie koncepcje przedstawia
-2. Zidentyfikuj wszystkie kluczowe pojęcia, skróty, kody i terminy techniczne widoczne na schemacie
-3. Wyjaśnij RELACJE i PRZEPŁYW między elementami - jaka jest logika biznesowa
-4. Stwórz tabelę pojęć z ich wyjaśnieniem
-
-NIE OPISUJ jak schemat wygląda wizualnie (kolory, kształty, położenie) - WYJAŚNIJ CO ON OZNACZA.
-
-WYMAGANY FORMAT ODPOWIEDZI:
-
-## Cel schematu
-[Wyjaśnij po co został stworzony ten schemat, jaką wiedzę przekazuje, jaki problem biznesowy/techniczny ilustruje]
-
-## Kluczowe koncepcje
-
-| Pojęcie/Termin | Wyjaśnienie |
-|----------------|-------------|
-| [termin z grafiki] | [co to oznacza] |
-| [kolejny termin] | [wyjaśnienie] |
-
-## Logika i relacje
-[Wyjaśnij jak elementy współpracują ze sobą, jaki jest przepływ informacji/procesu, jakie są zależności między pojęciami]
-
-## Kluczowe wnioski
-- [Wniosek 1 - co najważniejszego pokazuje ten schemat]
-- [Wniosek 2]
-- [Wniosek 3]
-
-WAŻNE: Wyciągnij CAŁY tekst ze schematu i umieść go w tabeli pojęć z wyjaśnieniem. Jeśli schemat zawiera proces - opisz jego kroki. Jeśli zawiera hierarchię - wyjaśnij poziomy."""
+        return """You are an expert document OCR and layout parsing assistant. 
+            Extract the text, tables, and formatting from the provided document image 
+            and output it EXACTLY as clean Markdown. 
+            Rules:
+            - Preserve heading levels (#, ##, etc.)
+            Convert tables to Markdown tables.
+            - Do not add ANY conversational filler (e.g., 'Here is the markdown:').
+            - Stop generating immediately when you reach the end of the page content."""
 
     def _item_to_markdown(self, item, level, doc) -> Optional[str]:
         try:

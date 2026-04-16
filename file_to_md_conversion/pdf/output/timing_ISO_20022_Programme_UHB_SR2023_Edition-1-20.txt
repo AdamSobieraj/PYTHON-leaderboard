@@ -2,58 +2,58 @@ Raport przetwarzania pliku: data/ISO_20022_Programme_UHB_SR2023_Edition-1-20.pdf
 GPU Monitorowane: Nie (Brak GPU NVIDIA lub biblioteki pynvml)
 ============================================================
 Parser: markerLlm
-  Czas wykonania:          2381.6777 s
+  Czas wykonania:          1444.1119 s
   Liczba elementów:        1
-  Liczba znaków:           44489
-  RAM (Peak Process):      3342.32 MB
-  CPU (Avg Process):       0.86 %
-  CPU (Peak Process):      1506.60 %
+  Liczba znaków:           18776
+  RAM (Peak Process):      3347.67 MB
+  CPU (Avg Process):       1.21 %
+  CPU (Peak Process):      1529.60 %
 ----------------------------------------
 Parser: doclingLlm
-  Czas wykonania:          1562.5988 s
+  Czas wykonania:          1316.1075 s
   Liczba elementów:        19
-  Liczba znaków:           32805
-  RAM (Peak Process):      3703.64 MB
-  CPU (Avg Process):       1.25 %
-  CPU (Peak Process):      677.90 %
+  Liczba znaków:           18523
+  RAM (Peak Process):      3709.87 MB
+  CPU (Avg Process):       1.39 %
+  CPU (Peak Process):      798.50 %
 ----------------------------------------
 Parser: llmstudio
-  Czas wykonania:          2565.4957 s
+  Czas wykonania:          2617.0519 s
   Liczba elementów:        19
   Liczba znaków:           21260
-  RAM (Peak Process):      3580.95 MB
-  CPU (Avg Process):       0.31 %
+  RAM (Peak Process):      3581.20 MB
+  CPU (Avg Process):       0.34 %
   CPU (Peak Process):      29.90 %
 ----------------------------------------
 Parser: pymupdf4llm
-  Czas wykonania:          1.3716 s
+  Czas wykonania:          1.4084 s
   Liczba elementów:        18
   Liczba znaków:           16656
-  RAM (Peak Process):      3657.71 MB
-  CPU (Avg Process):       1296.62 %
-  CPU (Peak Process):      1902.40 %
+  RAM (Peak Process):      3657.95 MB
+  CPU (Avg Process):       1282.64 %
+  CPU (Peak Process):      1944.90 %
 ----------------------------------------
 Parser: kreuzberg
-  Czas wykonania:          0.1498 s
+  Czas wykonania:          0.2448 s
   Liczba elementów:        1
   Liczba znaków:           14086
-  RAM (Peak Process):      3657.90 MB
-  CPU (Avg Process):       72.20 %
-  CPU (Peak Process):      72.20 %
+  RAM (Peak Process):      3686.24 MB
+  CPU (Avg Process):       138.35 %
+  CPU (Peak Process):      146.60 %
 ----------------------------------------
 Parser: docling
-  Czas wykonania:          6.6606 s
+  Czas wykonania:          6.8244 s
   Liczba elementów:        16
   Liczba znaków:           14147
-  RAM (Peak Process):      4144.87 MB
-  CPU (Avg Process):       210.36 %
-  CPU (Peak Process):      737.90 %
+  RAM (Peak Process):      4144.95 MB
+  CPU (Avg Process):       208.05 %
+  CPU (Peak Process):      706.70 %
 ----------------------------------------
 Parser: marker
-  Czas wykonania:          10.4369 s
+  Czas wykonania:          10.3375 s
   Liczba elementów:        1
   Liczba znaków:           20696
-  RAM (Peak Process):      4297.18 MB
-  CPU (Avg Process):       138.94 %
-  CPU (Peak Process):      775.70 %
+  RAM (Peak Process):      4298.86 MB
+  CPU (Avg Process):       137.24 %
+  CPU (Peak Process):      748.00 %
 ----------------------------------------

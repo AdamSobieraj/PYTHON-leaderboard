@@ -289,3 +289,6 @@ if __name__ == "__main__":
         print(f"Nie podano pliku w argumencie. Używam domyślnego: {target_pdf}")
 
     process_pdf_to_test_folders(target_pdf)
+
+
+# markitdown

@@ -229,22 +229,9 @@ Payments Clearing and Settlement
 FI to FI Customer Credit Transfer (pacs.008)
 
 
-## Cel schematu
-Schemat ilustruje hierarchiczną architekturę modelu danych standardu ISO 20022. Jego celem jest przedstawienie sposobu budowania komunikatów finansowych w sposób modułowy – od najbardziej ogólnych definicji (fundamentów) po konkretne zestawy wiadomości wykorzystywane w procesach biznesowych. Ilustruje on zasadę "od ogółu do szczegółu", zapewniając spójność danych na wszystkich poziomach komunikacji międzyinstytucjonalnej.
-
-## Kluczowe koncepcje
-
-| Pojęcie/Termin | Wyjaśnienie |
-|----------------|-------------|
-| **Domain** | Poziom bazowy (domena). Zawiera wspólne komponenty, typy danych i słowniki, które są ustandaryzowane dla całego ekosystemu ISO 20022. Gwarantuje, że to samo pojęcie (np. "kod waluty" czy "identyfikator agenta") ma identyczne znaczenie w każdym komunikacie, niezależnie od jego przeznaczenia. |
-| **Message Definition** | Poziom definicji pojedynczego komunikatu. Jest to konkretna struktura wiadomości zbudowana przy użyciu elementów z poziomu Domain. Określa, jakie pola są wymagane, opcjonalne oraz jaka jest ich kolejność w ramach jednej, konkretnej operacji biznesowej (np. zlecenie przelewu). |
-| **Message Sets** | Poziom zestawów komunikatów. Grupa powiązanych ze sobą definicji wiadomości, które wspólnie realizują pełny proces biznesowy (tzw. *business case*). Zestaw ten opisuje przepływ informacji między uczestnikami procesu, gdzie jedna wiadomość inicjuje zdarzenie, a kolejne służą do potwierdzenia, rozliczenia lub odrzucenia operacji. |
-
-## Logika i relacje
-Schemat przedstawia relację zależności typu **bottom-up (od dołu do góry)** lub **warstwową**:
-
-1. **Fundament $\rightarrow$ Struktura:** Poziom **Domain** stanowi fundament dla wszystkich pozostałych warstw. Bez zdefiniowanej domeny nie można stworzyć spójnej definicji wiadomości (**Message Definition**), ponieważ to domena dostarcza "cegiełek" (typów danych).
-2. **Struktura $\rightarrow$ Proces:** Pojedyncze definicje wiadomości (**Message Definition**) są następnie grupowane w zestawy (**Message Sets**). Logika biznesowa polega
+Message Sets
+Message Definition
+Domain
 
 
 ---
@@ -253,53 +240,45 @@ Schemat przedstawia relację zależności typu **bottom-up (od dołu do góry)**
 Introduction to ISO 20022 - Message Identifier
 
 
-## Cel schematu
-Celem schematu jest zdefiniowanie standardowej struktury nazewnictwa identyfikatorów wiadomości biznesowych w standardzie ISO 20022. Ilustruje on rygorystyczną składnię, która pozwala na jednoznaczną identyfikację rodzaju komunikatu finansowego, jego przeznaczenia oraz konkretnej wersji technicznej w skali globalnej. Rozwiązuje to problem interoperacyjności między różnymi systemami bankowymi i finansowymi, zapewniając, że każda instytucja interpretuje strukturę wiadomości w ten sam sposób.
+4!a . 3!c . 3!n . 2!n
 
-## Kluczowe koncepcje
-
-| Pojęcie/Termin | Wyjaśnienie |
-|----------------|-------------|
-| **4!a** | Oznaczenie techniczne: 4 znaki alfabetu (litery). Określa obszar biznesowy. |
-| **Business area** | Obszar Biznesowy – najwyższy poziom klasyfikacji, definiujący domenę funkcjonalną komunikatu (np. pacs, camt, pain). |
-| **3!c** | Oznaczenie techniczne: 3 znaki alphanumeric/charaktery. Określa konkretny identyfikator wiadomości. |
-| **Message identifier/functionality** | Identyfikator/Funkcjonalność wiadomości – precyzyjne określenie, jaką funkcję pełni wiadomość w danym obszarze biznesowym (np. przelew, wyciąg). |
-| **3!n** | Oznaczenie techniczne: 3 cyfry (liczby). Określa wariant komunikatu. |
-| **Variant** | Wariant – modyfikacja podstawowej funkcjonalności wiadomości dla specyficznych zastosowań lub rynków, przy zachowaniu głównego celu biznesowego. |
-| **2!n** | Oznaczenie techniczne: 2 cyfry (liczby). Określa wersję komunikatu. |
-| **Version** | Wersja – numer iteracji schematu XML/JSON, wskazujący na konkretną rewizję techniczną i zestaw reguł walidacyjnych. |
-
-## Logika i rel
+- **4!a**: Business area
+- **3!c**: Message identifier/functionality
+- **3!n**: Variant
+- **2!n**: Version
 
 
 
-## Cel schematu
-Celem tego schematu jest wyjaśnienie struktury i nomenklatury identyfikatora wiadomości w standardzie ISO 20022. Ilustruje on, w jaki sposób sformalizowany kod (w tym przypadku `pacs.008.001.08`) służy do jednoznacznej identyfikacji obszaru biznesowego, rodzaju transakcji, wariantu wiadomości oraz jej wersji technicznej. Jest to kluczowe dla zapewnienia interoperacyjności między systemami różnych instytucji finansowych na całym świecie.
+# Example
+pacs.008.001.08
 
-## Kluczowe koncepcje
-
-| Pojęcie/Termin | Wyjaśnienie |
-|----------------|-------------|
-| **pacs** | Skrót od *Payments Clearing and Settlement*. Jest to obszar biznesowy (Business Area) odpowiedzialny za rozliczenia i clearing płatności między instytucjami finansowymi. |
-| **008** | Identyfikator konkretnego typu wiadomości w ramach obszaru pacs. W tym przypadku odnosi się do *FI To FI Customer Credit Transfer* (Przelew kredytowy klienta między instytucjami finansowymi). |
-| **001** | Numer wariantu (*Variant*). Określa on konkretną odmianę struktury wiadomości, która może być dostosowana do różnych scenariuszy biznesowych lub wymagań regulacyjnych. |
-| **08** | Numer wersji (*Version*). Wskazuje na konkretną rewizję techniczną schematu XML. Każda nowa wersja może wprowadzać zmiany w polach danych lub regułach walidacji. |
-| **pacs.008.001.08** | Pełny identyfikator wiadomości ISO 20022, który precyzyjnie definiuje standard komunikacyjny dla danej transakcji. |
-
-## Logika i relacje
-Schemat przedstawia hierarchiczną strukturę identyfikacji od ogółu do szczegółu (od lewej do prawej). Logika biznesowa opiera się na kaskadowym zawężaniu definicji wiadomości:
-
-1. **Poziom Obszaru (pacs):** Najpierw system określa kontekst wysokiego poziomu – w tym przypadku rozliczenia międzybankowe.
-2. **Poziom Funkcji (008):** W ramach obszaru pacs definiowany jest konkretny cel biznesowy – przesłanie środków klienta z jednego banku do drugiego.
-3. **Poziom Implementacji (001):** Następnie wskazywany jest wariant, który precyzuje strukturę danych dla tego konkretnego celu.
+- **pacs**: Payments Clearing and Settlement
+- **008**: FI To FI Customer Credit Transfer
+- **001**: Variant 1
+- **08**: Version 8
 
 
 ---
 
 <!-- ELEMENT 10 -->
 
-## Cel schematu
-Celem tego schematu jest przedstawienie ewolucji identyfikacji stron transakcji (Party Identifiers) w przejściu z tradycyjnego formatu SWIFT MT (FIN) na nowoczesny standard ISO 20022. Ilustruje on pełny cykl życia płatności – od jej zainicjowania, przez rozliczenia międzybankowe, aż
+# What is changing? Party Identifiers
+
+**Legend: ISO 20022**
+* [Box] New parties introduced in ISO 20022
+* [:XX] FIN MT format equivalent
+
+## Payment Initiation (pain)
+* Ultimate Debtor
+* Debtor :50a
+* Initiating Party
+* Forwarding Agent
+
+## Payments Clearing & Settlement (pacs)
+
+| Role | FIN MT Equivalent |
+| :--- | :--- |
+| Previous Instructing Agents | :72:/
 
 
 ---
@@ -312,18 +291,21 @@ The diagram attempts to explain the construct of an ISO 20022 message sent acros
 Within the CBPR+ User Handbook the predominant focus is on the Request Payload, as this is where the business information is contained. However, it is worth noting that a network provider will have additional containers around the Request Payload to perform functionality on its network. This diagram presents the additional containers on the SWIFT network such as the Request Header often referred to as the Technical Header of the message.
 
 
-## Cel schematu
-Celem schematu jest przedstawienie architektury warstwowej (modelu enkapsulacji) wiadomości finansowej przesyłanej w sieci SWIFT przy użyciu standardu ISO 20022. Ilustruje on rozróżnienie pomiędzy **warstwą transportową/sieciową** (SWIFTNet Headers), która odpowiada za dostarczenie wiadomości, a **warstwą biznesową** (Business Message), która zawiera właściwą treść merytoryczną i instrukcje aplikacyjne.
+# Exchange Request
+* **SWIFTNet Headers** (Outer layers)
+* **Request**
+    * `RequestHeader`
+    * `RequestPayload` (Envelope - container for the business message. The business message comprises the application header and 'business' document)
+        * Application Header
+        * Document
+            * MX Message Instance (The 'business' document contains the MX message instance (or ISO 20022 message instance))
+    * `Crypto`
 
-## Kluczowe koncepcje
+---
 
-| Pojęcie/Termin | Wyjaśnienie |
-|----------------|-------------|
-| **Exchange Request** | Najwyższy poziom opakowania komunikatu; kompletne żądanie wymiany danych między dwoma punktami końcowymi w sieci. |
-| **Request** | Struktura zawierająca wszystkie elementy niezbędne do przetworzenia żądania przez infrastrukturę sieciową. |
-| **RequestHeader** | Nagłówek techniczny poziomu sieci, zawierający informacje niezbędne dla routerów i systemów SWIFT do przekierowania komunikatu. |
-| **RequestPayload** | „Koperta” (envelope) – kontener, w którym zamknięta jest właściwa wiadomość biznesowa; oddziela warstwę transportu od treści. |
-| **Crypto
+**Business Message**
+* `<AppHdr> ... </AppHdr>` $\rightarrow$ ISO 20022 Business Application Header
+* `<Document> ... </Document>` $\rightarrow$ ISO 20022 Message
 
 
 ---
@@ -370,45 +352,22 @@ MX message element multiplicity  (occurrences)
 An MX  message element specifies its cardinality (number of elements in a set) using minimum (min) & maximum (max) to describe the occurrences.
 
 
-## Cel schematu
-Schemat przedstawia strukturę danych w standardzie ISO 20022 dotyczącą rozliczeń międzybankowych w ramach przelewu kredytowego (Credit Transfer). Jego celem jest zdefiniowanie hierarchii informacji, wskazując, jakie konkretne parametry finansowe i czasowe muszą być powiązane z danymi transakcyjnymi, aby proces rozliczenia środków między instytucjami finansowymi (settlement) mógł zostać prawidłowo przeprowadzony.
+.
+**Credit Transfer Transaction Information**
+* Interbank Settlement Amount
+* Interbank Settlement Date
 
-## Kluczowe koncepcje
-
-| Pojęcie/Termin | Wyjaśnienie |
-|----------------|-------------|
-| **Credit Transfer Transaction Information** | Główny kontener danych zawierający szczegółowe informacje o pojedynczej transakcji przelewu kredytowego. Jest to poziom nadrzędny, który grupuje wszystkie atrybuty konkretnego zlecenia płatniczego. |
-| **Interbank Settlement Amount** | Kwota rozliczenia międzybankowego. Jest to rzeczywista wartość środków, która zostaje przesunięta między rachunkami banków w systemie rozliczeniowym (np. w banku centralnym), co może różnić się od kwoty zlecenia, jeśli doliczone są opłaty lub prowizje międzybankowe. |
-| **Interbank Settlement Date** | Data rozliczenia międzybankowego. Jest to data walutowa (value date), w której środki zostają faktycznie rozliczone pomiędzy instytucjami finansowymi uczestniczącymi w transakcji. |
-| **mark.** | Fragment tekstu widoczny na schemacie; w kontekście technicznym może być częścią dłuższego słowa (np. "benchmark") lub oznaczeniem przypisu, jednak nie stanowi on samodzielnego terminu biznesowego standardu ISO 20022. |
-
-## Logika i relacje
-Schemat przedstawia relację hierarchiczną typu **jeden-do-wielu** (parent-child). 
-
-1. **Punkt wyjścia:** Element nadrzęd
+mark.
 
 
 
-## Cel schematu
-Celem tego schematu jest zdefiniowanie zasad **kardynalności (multiplicity)** elementów danych w standardzie ISO 20022. Ilustruje on techniczne reguły określające, ile razy dany element (pole/tag) może lub musi wystąpić w wiadomości XML. Jest to kluczowe dla procesu walidacji komunikatów finansowych – pozwala systemom odbiorczym określić, czy wiadomość jest kompletna i poprawnie sformatowana zgodnie z definicją biznesową.
+# Element Multiplicity
 
-## Kluczowe koncepcje
-
-| Pojęcie/Termin | Wyjaśnienie |
-|----------------|-------------|
-| Element Multiplicity | Wielokrotność elementu; określa dopuszczalną liczbę wystąpień danego pola w strukturze wiadomości. |
-| Min | Minimalna liczba wymaganych wystąpień elementu. Jeśli wynosi 1, pole jest obowiązkowe. Jeśli 0, pole może zostać pominięte. |
-| Max | Maksymalna dopuszczalna liczba wystąpień elementu w ramach jednego bloku danych. |
-| Required element | Element wymagany; musi wystąpić dokładnie jeden raz (nie może go zabraknąć i nie może być powielony). |
-| Optional element | Element opcjonalny; może wystąpić zero lub jeden raz. Jest dopuszczalny, ale jego brak nie powoduje błędu walidacji. |
-| Unlimited element occurrences | Nieograniczona liczba wystąpień; element może nie wystąpić wcale lub pojawić się dowolną liczbę razy (np. lista transakcji). |
-| * (gwiazdka) | Symbol techniczny oznaczający brak górnego limitu (nieograniczoną ilość powtórzeń). |
-
-## Logika i relacje
-Logika schematu opiera się na matematycznym przedziale między wartościami **Min** a **Max**, co bezpośrednio przekłada się na biznesowy status pola w wiadomości ISO 20022:
-
-1.  **Relacja 1 $\rightarrow$ 1 (Ścisła zależność):** Gdy minimum i maksimum wynoszą 1, tworzy to wymóg bezwzględny. Z punktu widzenia biznesowego jest to krytyczna informacja (np. numer referencyjny przelewu), bez której wiadomość jest nieprawidłowa.
-2.  **Relacja 0 $\rightarrow$ 1 (Dopuszczalna nieobecność):** Gdy minimum wynosi 0, a maksimum 1, pole staje się opcjonalne. Biznesowo oznacza to informację dodatkową, która może być
+| Min | Max | Meaning |
+| :--- | :--- | :--- |
+| 1 | 1 | Required element |
+| 0 | 1 | Optional element |
+| 0 | * | Unlimited element occurrences |
 
 
 ---
@@ -423,21 +382,13 @@ An empty XML element is an element that contains no data content and therefore i
 Acommon example of this is in payment message is Financial Institution.
 
 
-## Cel schematu
-Schemat ten definiuje strukturę danych służącą do jednoznacznej identyfikacji instytucji finansowej w ramach standardu ISO 20022. Jego celem jest zapewnienie ustandaryzowanego sposobu przekazywania informacji o bankach lub innych podmiotach finansowych uczestniczących w transakcji (np. agent dłużnika, agent wierzyciela), co minimalizuje ryzyko błędów w routingu płatności i zwiększa transparentność operacji finansowych na poziomie globalnym.
-
-## Kluczowe koncepcje
-
-| Pojęcie/Termin | Wyjaśnienie |
-|----------------|-------------|
-| **Financial Institution Identification** | Główny blok (kontener) danych służący do identyfikacji instytucji finansowej. Jest elementem obowiązkowym (kardynalność 1:1). |
-| **BICFI** | Business Identifier Code for Financial Institutions. Standardowy kod SWIFT/BIC, który pozwala na jednoznaczną identyfikację banku w sieci międzynarodowej. |
-| **Clearing System Member Identification** | Identyfikator członka systemu rozliczeniowego. Unikalny kod przypisany do instytucji w ramach konkretnego krajowego lub regionalnego systemu rozliczeń (np. systemy RTGS). |
-| **LEI** | Legal Entity Identifier. Globalny, 20-znakowy kod identyfikacyjny dla podmiotów prawnych uczestniczących w aktywnościach finansowych, zwiększający przejrzystość rynków kapitałowych. |
-| **Name** | Pełna, oficjalna nazwa instytucji finansowej. |
-| **Postal Address** | Adres pocztowy siedziby instytucji, zawierający szczegóły lokalizacji geograficznej. |
-| **1 1 (kardynalność)** | Oznacza, że element jest obowiązkowy i musi wystąpić dokładnie jeden raz. |
-| **0 1 (kardynalność)** | Oznacza, że element jest opcjonalny – może nie wystąpić wcale
+| Financial Institution Identification | 1 | 1 |
+| :--- | :---: | :---: |
+| BICFI | 0 | 1 |
+| Clearing System Member Identification | 0 | 1 |
+| LEI | 0 | 1 |
+| Name | 0 | 1 |
+| Postal Address | 0 | 1 |
 
 
 Whereby technically it is possible to provide just Financial Institution without BICFI, or Name and Postal Address as an example i.e., <FinInstnId></FinInstnId>
@@ -471,8 +422,53 @@ To visualise an element which is nested and has a choice associated with it. For
 The CBPR+ group has published all its usage guidelines in MyStandards
 
 
-## Cel schematu
-Przedstawiony obraz to centrum zasobów technicznych i biznesowych dla standardu **CBPR+ (Cross-Border Payments and Reporting Plus)** w ramach platformy SWIFT MyStandards. Jego celem jest dostarczenie instytucjom finansowym kompletnego ekosystemu dokumentacji, narzędzi i wytycznych niezbędnych do implementacji standardu ISO 20022 w płatnościach transgranicznych. Schemat ten ilustruje strukturę wspar
+# CBPR+
+
+Cross-Border Payments and Reporting Plus (CBPR+) specifications define how ISO 20022 is used for cross-border payments and cash reporting on the Swift network. Conformance to CBPR+ specifications will be validated by Swift messaging services and interfaces, so it is imperative that users implement the specifications correctly. The resources available on this page aim to help Swift's community to understand and implement CBPR+ specifications.
+
+Learn more about ISO 20022 Readiness >
+
+**CBPR+ Usage Guidelines and Readiness Portal** | **CBPR+ Translation Portal**
+
+## Additional resources
+
+Find out how ISO 20022 is used for cross-border payments and cash reporting on the Swift network.
+
+### Document centre
+
+**CBPR+ user handbook**
+Explains how CBPR+ Usage Guidelines support common business scenarios in cross-border payment and reporting processes.
+Download >
+
+**Data integrity market practice guidance**
+Defines recommended market practices to report truncated or missing payment information using the MT messaging standard.
+Download >
+
+**CBPR+ and HVPS+ alignment**
+Lists the similarities and differences between the two market practice sets.
+Download >
+
+**Derived data mapping guidance**
+Provides guidance on how to populate information from one messaging standard to the other subsequent message.
+Download >
+
+**MT / MX equivalence table**
+Documents the CBPR+ Usage Guidelines supported on Swift InterAct Fileplus service in comparison with the equivalent MT message
+Download >
+
+**Lessons learnt since go-live**
+This document intends to provide guidance to the community regarding observations that may be identified before or after the migration.
+Download >
+
+### Samples library
+
+**CBPR+ sample messages**
+Sample messages sets to test the use cases described in the CBPR+ user handbook.
+Learn more >
+
+**In-flow translation service sample messages**
+Sample test messages for the In-flow translation service.
+Learn more >
 
 
 https://www2.swift.com/mystandards/#/c/cbpr/landing
@@ -483,12 +479,7 @@ https://www2.swift.com/mystandards/#/c/cbpr/landing
 Message Usage Guideline - Additional Information and principals
 
 
-## Cel schematu
-Celem przedstawionego materiału jest zaprezentowanie sposobu dostępu do i interpretacji **Usage Guidelines** (wytycznych użytkowania) dla konkretnego standardu wiadomości ISO 20022 w ramach sieci SWIFT. Schemat ilustruje, jak teoretyczny standard ISO zostaje doprecyzowany do poziomu konkretnych zasad biznesowych (**Principles**) stosowanych w programie CBPR+ (Cross Border Payments and Reporting Plus), aby zapewnić interoperacyjność i automatyzację przelewów transgranicznych między bankami.
 
-## Kluczowe koncepcje
-
-| Pojęcie/Termin |
 
 
 ---
@@ -518,27 +509,7 @@ Rules inherited from the baseline message and validated on the SWIFT network are
 Usage Identifier  - Format
 
 
-## Cel schematu
-Celem tego schematu jest zdefiniowanie rygorystycznej struktury syntaktycznej (formatu) identyfikatora tzw. **Business Context** w standardzie ISO 20022. Schemat ten określa, w jaki sposób należy budować ciąg znaków, który pozwala systemom finansowym jednoznacznie zidentyfikować: kto stworzył daną regułę biznesową (organizacja), jakiego obszaru ona dotyczy (kontekst) oraz w której wersji jest ona aktualna. 
 
-Jest to kluczowe dla interoperacyjności między bankami i instytucjami finansowymi, aby oba końce transakcji wiedziały, jaki "zeszyt reguł" (rulebook) jest stosowany do walidacji danej wiadomości.
-
-## Kluczowe koncepcje
-
-| Pojęcie/Termin | Wyjaśnienie |
-|----------------|-------------|
-| `<Short issuer organisation>` (A) | Skrócony identyfikator organizacji, która wydała standard lub regułę biznesową (np. SWIFT, EPC). Limit: od 1 do 10 znaków. |
-| `<Business context>` (B, C, D...) | Określenie konkretnego obszaru biznesowego, procesu lub usługi, której dotyczy wiadomość. Może występować jeden lub wiele takich elementów. Każdy z nich ma limit 1-10 znaków. |
-| `{.<Business context>} n times` | Wskazanie na strukturę rekurencyjną/powtarzalną. Oznacza, że po pierwszym kontekście mogą nastąpić kolejne poziomy uszczegółowienia (n razy), przedzielone kropką. |
-| `<version>` (E) | Numer wersji reguły biznesowej, co pozwala na wersjonowanie standardów bez przerywania ciągłości procesów. Limit: dokładnie 2 znaki. |
-| `.` (1 char) | Separator w formie kropki, który oddziela poszczególne poziomy hierarchii identyfikatora. |
-| `Total max 35 char` | Całkowity limit długości całego ciągu znaków, którego nie można przekroczyć (ograniczenie techniczne pola w wiadomości ISO 20022). |
-
-## Logika i relacje
-Schemat przedstawia hierarchiczny przepływ informacji od ogółu do szczegółu:
-
-1. **Poziom najwyższy (Wydawca):** Proces zaczyna się od identyfikacji organizacji (`Short issuer organisation`), która jest "właścicielem" standardu.
-2. **Poziom średni
 
 
 Type: String
@@ -579,25 +550,11 @@ Some data element may also be embedded in the message.
 example of Charge Bearer in pacs.008 v8 which uses embedded codes
 
 
-## Cel schematu
-Celem tego schematu jest zdefiniowanie elementu **Charge Bearer** (Podmiot ponoszący koszty), który w standardzie ISO 20022 służy do jednoznacznego określenia, która ze stron transakcji płatniczej pokrywa opłaty i prowizje bankowe związane z realizacją przelewu. Schemat ten eliminuje niejednoznaczność w rozliczeniach międzybankowych, wskazując na konkretny kod instrukcji kosztowej.
-
-## Kluczowe koncepcje
-
-| Pojęcie/Termin | Wyjaśnienie |
-|----------------|-------------|
-| **Charge Bearer** | Główny element (kontener) określający zasady ponoszenia kosztów transakcji. |
-| **1 1** (Kardynalność) | Oznacza, że element ten jest obowiązkowy i musi wystąpić dokładnie jeden raz w wiadomości. |
-| **Borne By Debtor [DEBT]** | Koszty są ponoszone przez dłużnika (nadawcę przelewu). Odpowiada to tradycyjnemu modelowi "OUR". |
-| **Borne By Creditor [CRED]** | Koszty są ponoszone przez wierzyciela (odbiorcę przelewu). Odpowiada to tradycyjnemu modelowi "BEN". |
-| **Shared [SHAR]** | Koszty są dzielone: dłużnik płaci opłaty swojemu bankowi, a wierzyciel opłatom banków pośredniczących i swojego banku. Odpowiada to modelowi "SHA". |
-| **Following Service Level [SLEV]** | Koszty są określane zgodnie z poziomem usług (Service Level Agreement) uzgodnionym między instytucjami finansowymi. |
-
-## Logika i relacje
-Schemat przedstawia strukturę hierarchiczną typu **wybór (enumeration)**. 
-
-1. **Relacja nadrzędna**: `Charge Bearer` jest elementem nadrzędnym, który definiuje kontekst biznesowy (kto płaci).
-2. **Logika wyboru**: Elementy znajdujące się poniżej (`DEBT`, `CRED`, `SHAR`, `SLEV`) są alternatywnymi wartościami. W konkretnej wiadomości XML ISO
+# Charge Bearer 1 1
+- Borne By Debtor [DEBT]
+- Borne By Creditor [CRED]
+- Shared [SHAR]
+- Following Service Level [SLEV]
 
 
 Proprietary Codes may also be available for certain data elements.
@@ -605,18 +562,7 @@ Proprietary Codes may also be available for certain data elements.
 These are typically inherited from legacy formats and require definitions in user documentation  as these are not captured in the baseline ISO 20022 standards
 
 
-## Cel schematu
-Schemat przedstawia strukturę i zasady walidacji danych dla elementu **Return Reason Information** w ramach standardu ISO 20022, konkretnie dla komunikatu **pacs.004 v9 (Payment Return)**. 
 
-Jego głównym celem biznesowym jest ujednolicenie sposobu raportowania przyczyn zwrotów płatności między instytucjami finansowymi. Zamiast stosować opisowy tekst wolny (który byłby niejednoznaczny), schemat wymusza zastosowanie **zewnętrznych kodów reason (externalised codes)**. Dzięki temu systemy bankowe mogą automatycznie przetwarzać powody zwrotów, co przyspiesza procesy operacyjne i minimalizuje błędy w komunikacji międzybankowej.
-
-## Kluczowe koncepcje
-
-| Pojęcie/Termin | Wyjaśnienie |
-|----------------|-------------|
-| **pacs.004 v9** | Standardowy komunikat ISO 20022 służący do informowania o zwrocie przelewu (Payment Return). |
-| **Return Reason Information** | Blok danych zawierający szczegółowe informacje o tym, dlaczego dana płatność została zwrócona. |
-| **Originator** | Podmiot
 
 
 19 XLSX format is readable in MS Excel
