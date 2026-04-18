@@ -6,6 +6,7 @@ import re
 import time
 from typing import List, Union, Optional, Dict
 
+from dotenv import load_dotenv
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
@@ -14,16 +15,17 @@ from marker.models import create_model_dict
 
 from base_parser import BaseDocumentParser
 
+load_dotenv()
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
 )
 logger = logging.getLogger("MarkerVisionParser")
 
-LLM_BASE_URL = "http://192.168.50.112:1234/v1"
-LLM_MODEL = "gemma-4-31b"
-LLM_API_KEY = "not-needed"
-
+LLM_BASE_URL = os.getenv("LLM_BASE_URL")
+LLM_MODEL = os.getenv("LLM_MODEL")
+LLM_API_KEY = os.getenv("LLM_API_KEY")
 
 class PdfParser(BaseDocumentParser):
     """

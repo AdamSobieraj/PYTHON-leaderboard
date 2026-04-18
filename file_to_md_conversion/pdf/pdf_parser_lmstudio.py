@@ -1,17 +1,22 @@
 import sys
 
-LLM_BASE_URL = "http://192.168.50.112:1234/v1"
-LLM_MODEL = "gemma-4-31b"
-
 import io
 import logging
 import os
 import base64
 import time
 from typing import Dict, List, Optional, Tuple, Union
+
+from dotenv import load_dotenv
 from langchain_core.documents import Document
 
 from base_parser import BaseDocumentParser
+
+load_dotenv()
+
+LLM_BASE_URL = os.getenv("LLM_BASE_URL")
+LLM_MODEL = os.getenv("LLM_MODEL")
+LLM_API_KEY = os.getenv("LLM_API_KEY")
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
@@ -42,8 +47,6 @@ class PdfParser(BaseDocumentParser):
 
     def __init__(
             self,
-            base_url: str = os.getenv("LLM_BASE_URL", LLM_BASE_URL),
-            model_name: str = os.getenv("LLM_MODEL", LLM_MODEL),
             temperature: float = 0.0,
             dpi_scale: float = 1.2,
             top_margin_crop: float = 50.0,
@@ -54,14 +57,13 @@ class PdfParser(BaseDocumentParser):
         if not FITZ_AVAILABLE or not OPENAI_AVAILABLE:
             raise ImportError("Zainstaluj wymagania: pip install pymupdf openai")
 
-        self.model_name = model_name
         self.temperature = temperature
         self.dpi_scale = dpi_scale
 
         # Timeout na 10 minut, żeby połączenie nie zerwało się przy trudnych stronach
         self.client = OpenAI(
-            base_url=base_url,
-            api_key="lm-studio",
+            base_url=LLM_BASE_URL,
+            api_key=LLM_API_KEY,
             timeout=600.0
         )
 
@@ -74,7 +76,7 @@ class PdfParser(BaseDocumentParser):
             [top_margin_crop, bottom_margin_crop, left_margin_crop, right_margin_crop]
         )
 
-        logger.info(f"LM Studio Parser zainicjalizowany (URL: {base_url}, Model: {model_name}).")
+        logger.info(f"LM Studio Parser zainicjalizowany (URL: {LLM_BASE_URL}, Model: {LLM_MODEL}).")
 
         self.system_prompt = (
             "You are an expert document OCR and layout parsing assistant. "
@@ -167,7 +169,7 @@ class PdfParser(BaseDocumentParser):
     def diagnostics(self) -> Dict[str, str]:
         return {
             "engine": "LM Studio Vision",
-            "model_name_requested": self.model_name,
+            "model_name_requested": LLM_MODEL,
             "base_url": str(self.client.base_url),
             "dpi_scale": str(self.dpi_scale),
             "margins_enabled": str(self._margins_enabled),
@@ -222,7 +224,7 @@ class PdfParser(BaseDocumentParser):
     def _call_vision_llm(self, base64_image: str) -> Optional[str]:
         try:
             response = self.client.chat.completions.create(
-                model=self.model_name,
+                model=LLM_MODEL,
                 messages=[
                     {
                         "role": "system",

@@ -32,6 +32,8 @@ from pdf_parser_marker import PdfParser as MarkerParser
 from pdf_parser_lmstudio import PdfParser as LmStudioParser
 from pdf_parser_marker_llm import PdfParser as MarkerParserLlm
 from pdf_parser_docling_llm import PdfParser as DoclingParserLlm
+from pdf_parser_markitdown_llm import PdfParser as MarkItDownParserLlm
+from pdf_parser_markitdown import PdfParser as MarkItDownParser
 
 
 class ResourceMonitor:
@@ -222,13 +224,16 @@ def process_pdf_to_test_folders(pdf_path: str):
         return
 
     parsers = {
+        "markitdownLlm": MarkItDownParserLlm,
+        "markitdown": MarkItDownParser,
         "markerLlm": MarkerParserLlm,
         "doclingLlm": DoclingParserLlm,
-        "llmstudio" : LmStudioParser,
+        "llmstudio": LmStudioParser,
         "pymupdf4llm": PyMuPdfParser,
         "kreuzberg": KreuzbergParser,
         "docling": DoclingParser,
-        "marker" : MarkerParser
+        "marker": MarkerParser,
+
     }
 
     timing_results = []

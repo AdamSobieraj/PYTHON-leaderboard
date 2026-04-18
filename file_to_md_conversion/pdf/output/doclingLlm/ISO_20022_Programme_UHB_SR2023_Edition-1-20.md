@@ -240,17 +240,17 @@ Domain
 Introduction to ISO 20022 - Message Identifier
 
 
-4!a . 3!c . 3!n . 2!n
-
-- **4!a**: Business area
-- **3!c**: Message identifier/functionality
-- **3!n**: Variant
-- **2!n**: Version
+| Segment | Description |
+| :--- | :--- |
+| 4!a | Business area |
+| 3!c | Message identifier/functionality |
+| 3!n | Variant |
+| 2!n | Version |
 
 
 
 # Example
-pacs.008.001.08
+**pacs.008.001.08**
 
 - **pacs**: Payments Clearing and Settlement
 - **008**: FI To FI Customer Credit Transfer
@@ -262,23 +262,7 @@ pacs.008.001.08
 
 <!-- ELEMENT 10 -->
 
-# What is changing? Party Identifiers
 
-**Legend: ISO 20022**
-* [Box] New parties introduced in ISO 20022
-* [:XX] FIN MT format equivalent
-
-## Payment Initiation (pain)
-* Ultimate Debtor
-* Debtor :50a
-* Initiating Party
-* Forwarding Agent
-
-## Payments Clearing & Settlement (pacs)
-
-| Role | FIN MT Equivalent |
-| :--- | :--- |
-| Previous Instructing Agents | :72:/
 
 
 ---
@@ -292,20 +276,23 @@ Within the CBPR+ User Handbook the predominant focus is on the Request Payload, 
 
 
 # Exchange Request
-* **SWIFTNet Headers** (Outer layers)
+
 * **Request**
-    * `RequestHeader`
-    * `RequestPayload` (Envelope - container for the business message. The business message comprises the application header and 'business' document)
-        * Application Header
-        * Document
-            * MX Message Instance (The 'business' document contains the MX message instance (or ISO 20022 message instance))
-    * `Crypto`
+    * **RequestHeader**: SWIFTNet Headers
+    * **RequestPayload**: Envelope - container for the business message. The business message comprises the application header and 'business' document.
+        * **Application Header**
+        * **Document**: The 'business' document contains the MX message instance (or ISO 20022 message instance).
+            * **MX Message Instance**
+    * **Crypto**
 
 ---
 
-**Business Message**
-* `<AppHdr> ... </AppHdr>` $\rightarrow$ ISO 20022 Business Application Header
-* `<Document> ... </Document>` $\rightarrow$ ISO 20022 Message
+# Business Message
+
+| Component | Description |
+| :--- | :--- |
+| `<AppHdr>` ... `</AppHdr>` | ISO 20022 Business Application Header |
+| `<Document>` ... `</Document>` | ISO 20022 Message |
 
 
 ---
@@ -352,18 +339,13 @@ MX message element multiplicity  (occurrences)
 An MX  message element specifies its cardinality (number of elements in a set) using minimum (min) & maximum (max) to describe the occurrences.
 
 
-.
-**Credit Transfer Transaction Information**
-* Interbank Settlement Amount
-* Interbank Settlement Date
 
-mark.
 
 
 
 # Element Multiplicity
 
-| Min | Max | Meaning |
+| Min | Max | Description |
 | :--- | :--- | :--- |
 | 1 | 1 | Required element |
 | 0 | 1 | Optional element |
@@ -382,13 +364,7 @@ An empty XML element is an element that contains no data content and therefore i
 Acommon example of this is in payment message is Financial Institution.
 
 
-| Financial Institution Identification | 1 | 1 |
-| :--- | :---: | :---: |
-| BICFI | 0 | 1 |
-| Clearing System Member Identification | 0 | 1 |
-| LEI | 0 | 1 |
-| Name | 0 | 1 |
-| Postal Address | 0 | 1 |
+
 
 
 Whereby technically it is possible to provide just Financial Institution without BICFI, or Name and Postal Address as an example i.e., <FinInstnId></FinInstnId>
@@ -422,53 +398,7 @@ To visualise an element which is nested and has a choice associated with it. For
 The CBPR+ group has published all its usage guidelines in MyStandards
 
 
-# CBPR+
 
-Cross-Border Payments and Reporting Plus (CBPR+) specifications define how ISO 20022 is used for cross-border payments and cash reporting on the Swift network. Conformance to CBPR+ specifications will be validated by Swift messaging services and interfaces, so it is imperative that users implement the specifications correctly. The resources available on this page aim to help Swift's community to understand and implement CBPR+ specifications.
-
-Learn more about ISO 20022 Readiness >
-
-**CBPR+ Usage Guidelines and Readiness Portal** | **CBPR+ Translation Portal**
-
-## Additional resources
-
-Find out how ISO 20022 is used for cross-border payments and cash reporting on the Swift network.
-
-### Document centre
-
-**CBPR+ user handbook**
-Explains how CBPR+ Usage Guidelines support common business scenarios in cross-border payment and reporting processes.
-Download >
-
-**Data integrity market practice guidance**
-Defines recommended market practices to report truncated or missing payment information using the MT messaging standard.
-Download >
-
-**CBPR+ and HVPS+ alignment**
-Lists the similarities and differences between the two market practice sets.
-Download >
-
-**Derived data mapping guidance**
-Provides guidance on how to populate information from one messaging standard to the other subsequent message.
-Download >
-
-**MT / MX equivalence table**
-Documents the CBPR+ Usage Guidelines supported on Swift InterAct Fileplus service in comparison with the equivalent MT message
-Download >
-
-**Lessons learnt since go-live**
-This document intends to provide guidance to the community regarding observations that may be identified before or after the migration.
-Download >
-
-### Samples library
-
-**CBPR+ sample messages**
-Sample messages sets to test the use cases described in the CBPR+ user handbook.
-Learn more >
-
-**In-flow translation service sample messages**
-Sample test messages for the In-flow translation service.
-Learn more >
 
 
 https://www2.swift.com/mystandards/#/c/cbpr/landing
@@ -550,11 +480,7 @@ Some data element may also be embedded in the message.
 example of Charge Bearer in pacs.008 v8 which uses embedded codes
 
 
-# Charge Bearer 1 1
-- Borne By Debtor [DEBT]
-- Borne By Creditor [CRED]
-- Shared [SHAR]
-- Following Service Level [SLEV]
+
 
 
 Proprietary Codes may also be available for certain data elements.

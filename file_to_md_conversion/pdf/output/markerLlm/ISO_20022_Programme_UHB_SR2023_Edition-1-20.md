@@ -155,7 +155,7 @@ Exception & Investigation Case Assigner
 
 ![](_page_2_Picture_33.jpeg)
 
-Best practice
+# Best practice
 
 
 ![](_page_2_Picture_34.jpeg)
@@ -322,12 +322,12 @@ ISO 20022 catalogue messages hierarchically beginning with a Business Domain, co
 
 # Example
 
-**pacs.008.001.08**
+`pacs.008.001.08`
 
-* **pacs**: Payments Clearing and Settlement
-* **008**: FI To FI Customer Credit Transfer
-* **001**: Variant 1
-* **08**: Version 8
+- **pacs**: Payments Clearing and Settlement
+- **008**: FI To FI Customer Credit Transfer
+- **001**: Variant 1
+- **08**: Version 8
 
 
 ![](_page_8_Picture_3.jpeg)
@@ -350,14 +350,7 @@ ISO 20022 catalogue messages hierarchically beginning with a Business Domain, co
 
 ![](_page_9_Figure_8.jpeg)
 
-# Payment Initiation (pain)
-- Ultimate Debtor
-- Debtor (:50a)
-- Initiating Party
-- Forwarding Agent
 
-# Payments Clearing & Settlement (pacs)
-- Previous Instructing Agents (:7
 
 
 ![](_page_9_Picture_9.jpeg)
@@ -370,23 +363,7 @@ Within the CBPR+ User Handbook the predominant focus is on the **Request Payload
 
 ![](_page_10_Figure_3.jpeg)
 
-# Exchange Request
 
-## Request (SWIFTNet Headers)
-- **RequestHeader**
-- **RequestPayload** (Envelope - container for the business message)
-    - The business message comprises the application header and 'business' document.
-    - **Application Header**
-    - **Document**
-        - The 'business' document contains the MX message instance (or ISO 20022 message instance).
-        - **MX Message Instance**
-- **Crypto**
-
-## Business Message Mapping
-- `<AppHdr> ... </AppHdr>` $\rightarrow$ ISO 20022 Business Application Header
-- `<Document> ... </Document>` $\rightarrow$ ISO 20022 Message
-
-**Combined as: Business Message**
 
 
 ![](_page_10_Picture_4.jpeg)
@@ -480,9 +457,7 @@ To visualise an element which is nested and has a choice associated with it. For
 
 ![](_page_14_Picture_1.jpeg)
 
-Swift MyStandards | Search | Standards Releases | CBPR+ | Swift Guidelines | Groups
 
-# CBPR
 
 
 **<https://www2.swift.com/mystandards/#/c/cbpr/landing>**
@@ -536,7 +511,7 @@ Rules inherited from the baseline message and validated on the SWIFT network are
 ![](_page_17_Picture_11.jpeg)
 
 ```markdown
-<!-- No text or tables found in the provided image. -->
+<!-- No text or tables found in the provided image -->
 ```
 
 
@@ -549,6 +524,7 @@ In CBPR+ the Usage Identifier is captured within the *Business Application Heade
 ![](_page_18_Picture_1.jpeg)
 
 ```markdown
+(No text found in image)
 ```
 
 

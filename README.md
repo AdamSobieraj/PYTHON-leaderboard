@@ -185,6 +185,36 @@ enabling a fair apples-to-apples comparison.
 
 ---
 
+### 8. MarkItDown (Microsoft) — `pdf_parser_markitdown.py`
+
+| Feature | Value |
+|---|---|
+| Engine | MarkItDown (Microsoft) via PyMuPDF backend |
+| Speed | ⚡ very fast (2-5s for typical PDF) |
+| Tables | ⚠️ basic (simple tables only, complex layouts may break) |
+| OCR | ❌ no (text-based PDFs only, no scanned documents) |
+| GPU | ❌ not required (pure CPU) |
+| Native Markdown | ✅ yes (native output format) |
+
+**When to use:** quick prototyping, simple text-heavy PDFs without complex tables or images, low-resource environments where speed matters more than extraction quality.
+
+---
+
+### 9. MarkItDown + LLM Vision — `pdf_parser_markitdown_llm.py`
+
+| Feature | Value |
+|---|---|
+| Engine | MarkItDown (text) + OpenAI-compatible Vision API (images) |
+| Speed | 🐢 slow (LLM call per image, depends on model and hardware) |
+| Tables | ⚠️/✅ basic for text tables, excellent for image-embedded tables |
+| OCR | ✅ yes (images with text described by vision LLM) |
+| GPU | ⚠️ required for local LLM (4GB+ VRAM for Q4 quantization) |
+| Native Markdown | ✅ yes (text via MarkItDown, images via prompted LLM) |
+
+**When to use:** PDFs mixing regular text with charts, diagrams or image-embedded tables, when full privacy is required (local LM Studio), or when MarkItDown alone misses critical visual content.
+
+---
+
 **Three-layer header/footer removal:**
 
 ```
@@ -637,6 +667,8 @@ Hardware: Intel i9-13900K, 64 GB RAM, NVIDIA RTX 4090 24 GB
 - [ ] Mistral OCR (cloud API)
 - [-] Azure Document Intelligence (requires aure account)
 - [x] LLm studio (depends on vision type model)
+- [x] MarkItDown / Microsoft (fast, text-only, no OCR)
+- [x] MarkItDown + LLM Vision / Microsoft (text + image description via local VLM)
 
 ### Chunking (text splitting)
 

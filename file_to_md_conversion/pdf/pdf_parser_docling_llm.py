@@ -17,18 +17,20 @@ from docling.datamodel.pipeline_options import (
     TableStructureOptions,
 )
 from docling.document_converter import DocumentConverter, PdfFormatOption
+from dotenv import load_dotenv
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 
 from base_parser import BaseDocumentParser
 
+load_dotenv()
+
 logger = logging.getLogger("DoclingVisionParser")
 
-LLM_BASE_URL = "http://192.168.50.112:1234/v1"
-LLM_MODEL = "gemma-4-31b"
-LLM_API_KEY = "not-needed"
-
+LLM_BASE_URL = os.getenv("LLM_BASE_URL")
+LLM_MODEL = os.getenv("LLM_MODEL")
+LLM_API_KEY = os.getenv("LLM_API_KEY")
 
 class PdfParser(BaseDocumentParser):
     def __init__(
