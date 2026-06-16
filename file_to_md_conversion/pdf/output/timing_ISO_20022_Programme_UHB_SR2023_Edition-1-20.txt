@@ -2,74 +2,74 @@ Raport przetwarzania pliku: data/ISO_20022_Programme_UHB_SR2023_Edition-1-20.pdf
 GPU Monitorowane: Nie (Brak GPU NVIDIA lub biblioteki pynvml)
 ============================================================
 Parser: markitdownLlm
-  Czas wykonania:          1240.3615 s
+  Czas wykonania:          112.3945 s
   Liczba elementów:        19
-  Liczba znaków:           20842
-  RAM (Peak Process):      1096.48 MB
-  CPU (Avg Process):       0.83 %
-  CPU (Peak Process):      681.70 %
+  Liczba znaków:           24323
+  RAM (Peak Process):      1095.27 MB
+  CPU (Avg Process):       6.44 %
+  CPU (Peak Process):      681.40 %
 ----------------------------------------
 Parser: markitdown
-  Czas wykonania:          2.5392 s
+  Czas wykonania:          2.6708 s
   Liczba elementów:        19
   Liczba znaków:           16605
-  RAM (Peak Process):      1140.73 MB
-  CPU (Avg Process):       109.69 %
-  CPU (Peak Process):      389.00 %
+  RAM (Peak Process):      1139.61 MB
+  CPU (Avg Process):       109.37 %
+  CPU (Peak Process):      398.20 %
 ----------------------------------------
 Parser: markerLlm
-  Czas wykonania:          1482.4982 s
+  Czas wykonania:          129.9887 s
   Liczba elementów:        1
-  Liczba znaków:           17911
-  RAM (Peak Process):      3398.22 MB
-  CPU (Avg Process):       1.20 %
-  CPU (Peak Process):      1431.50 %
+  Liczba znaków:           22523
+  RAM (Peak Process):      3449.72 MB
+  CPU (Avg Process):       10.35 %
+  CPU (Peak Process):      1495.00 %
 ----------------------------------------
 Parser: doclingLlm
-  Czas wykonania:          1297.3652 s
+  Czas wykonania:          109.1332 s
   Liczba elementów:        19
-  Liczba znaków:           15840
-  RAM (Peak Process):      3751.14 MB
-  CPU (Avg Process):       1.42 %
-  CPU (Peak Process):      668.20 %
+  Liczba znaków:           20433
+  RAM (Peak Process):      3799.55 MB
+  CPU (Avg Process):       14.73 %
+  CPU (Peak Process):      1145.10 %
 ----------------------------------------
 Parser: llmstudio
-  Czas wykonania:          2568.1968 s
+  Czas wykonania:          182.6930 s
   Liczba elementów:        19
-  Liczba znaków:           21260
-  RAM (Peak Process):      3645.49 MB
-  CPU (Avg Process):       0.35 %
-  CPU (Peak Process):      747.50 %
+  Liczba znaków:           20011
+  RAM (Peak Process):      3692.32 MB
+  CPU (Avg Process):       0.46 %
+  CPU (Peak Process):      33.50 %
 ----------------------------------------
 Parser: pymupdf4llm
-  Czas wykonania:          1.4949 s
+  Czas wykonania:          1.3235 s
   Liczba elementów:        18
   Liczba znaków:           16656
-  RAM (Peak Process):      3721.62 MB
-  CPU (Avg Process):       1275.10 %
-  CPU (Peak Process):      1814.70 %
+  RAM (Peak Process):      3768.46 MB
+  CPU (Avg Process):       1277.96 %
+  CPU (Peak Process):      1995.40 %
 ----------------------------------------
 Parser: kreuzberg
-  Czas wykonania:          0.1347 s
+  Czas wykonania:          0.1572 s
   Liczba elementów:        1
   Liczba znaków:           14086
-  RAM (Peak Process):      3721.62 MB
-  CPU (Avg Process):       215.60 %
-  CPU (Peak Process):      215.60 %
+  RAM (Peak Process):      3768.46 MB
+  CPU (Avg Process):       431.00 %
+  CPU (Peak Process):      431.00 %
 ----------------------------------------
 Parser: docling
-  Czas wykonania:          6.6035 s
+  Czas wykonania:          6.4442 s
   Liczba elementów:        16
   Liczba znaków:           14147
-  RAM (Peak Process):      4198.05 MB
-  CPU (Avg Process):       212.78 %
-  CPU (Peak Process):      757.40 %
+  RAM (Peak Process):      4255.42 MB
+  CPU (Avg Process):       212.65 %
+  CPU (Peak Process):      808.20 %
 ----------------------------------------
 Parser: marker
-  Czas wykonania:          10.6592 s
+  Czas wykonania:          10.6902 s
   Liczba elementów:        1
   Liczba znaków:           20696
-  RAM (Peak Process):      4351.09 MB
-  CPU (Avg Process):       134.90 %
-  CPU (Peak Process):      896.60 %
+  RAM (Peak Process):      4407.75 MB
+  CPU (Avg Process):       134.53 %
+  CPU (Peak Process):      881.60 %
 ----------------------------------------

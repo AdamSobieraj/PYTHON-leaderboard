@@ -62,8 +62,7 @@ Page 823-883 New – Cheque message sections Page 880 Updated - use case id corr
 
 ![](_page_1_Picture_20.jpeg)
 
-```markdown
-```
+
 
 
 The following icons dignify changes to slide from the previous itineration. Updates to text on a slide are captured in **gold**.
@@ -128,6 +127,8 @@ Exception & Investigation Case Assigner
 
 # gpi Tracker
 
+gpi
+
 
 ![](_page_2_Figure_21.jpeg)
 
@@ -155,7 +156,7 @@ Exception & Investigation Case Assigner
 
 ![](_page_2_Picture_33.jpeg)
 
-# Best practice
+Best practice
 
 
 ![](_page_2_Picture_34.jpeg)
@@ -311,23 +312,21 @@ ISO 20022 catalogue messages hierarchically beginning with a Business Domain, co
 ![](_page_8_Figure_1.jpeg)
 
 4!a . 3!c . 3!n . 2!n
-
-- **4!a**: Business area
-- **3!c**: Message identifier/functionality
-- **3!n**: Variant
-- **2!n**: Version
+*   4!a $\rightarrow$ Business area
+*   3!c $\rightarrow$ Variant
+*   3!n $\rightarrow$ Message identifier/functionality
+*   2!n $\rightarrow$ Version
 
 
 ![](_page_8_Figure_2.jpeg)
 
-# Example
+Example
+pacs.008.001.08
 
-`pacs.008.001.08`
-
-- **pacs**: Payments Clearing and Settlement
-- **008**: FI To FI Customer Credit Transfer
-- **001**: Variant 1
-- **08**: Version 8
+*   Version 8
+*   Variant 1
+    *   FI To FI Customer Credit Transfer
+*   Payments Clearing and Settlement
 
 
 ![](_page_8_Picture_3.jpeg)
@@ -350,7 +349,25 @@ ISO 20022 catalogue messages hierarchically beginning with a Business Domain, co
 
 ![](_page_9_Figure_8.jpeg)
 
+# Payment Initiation (pain)
 
+*   Ultimate Debtor
+    $\downarrow$
+*   Debtor / Initiating Party (:50a)
+    $\rightarrow$ Forwarding Agent
+
+# Payments Clearing & Settlement (pacs)
+
+*   Initiating Party $\rightarrow$ Debtor Agent (:52a)
+*   Debtor Agent $\rightarrow$ Instructing Agent (Sender)
+*   Instructing Agent $\rightarrow$ Instructed Agent (Receiver)
+*   Instructed Agent $\rightarrow$ Creditor Agent (:57a)
+
+*(Agents involved in Pacs flow: Previous Instructing Agents, Reimbursement Agents, Intermediary Agents)*
+
+# Cash Management (camt)
+
+*   Creditor $\rightarrow$ Ultimate Creditor (:59a)
 
 
 ![](_page_9_Picture_9.jpeg)
@@ -363,7 +380,29 @@ Within the CBPR+ User Handbook the predominant focus is on the **Request Payload
 
 ![](_page_10_Figure_3.jpeg)
 
+Exchange Request
+├── Request
+├── RequestHeader
+├── RequestPayload
+│   ├── Application Header
+│   ├── Document
+│   └── MX Message Instance
+└── Crypto
 
+*(SWIFTNet Headers: Envelope - container for the business message)*
+
+*The business message comprises the application header and 'business' document.*
+*The 'business' document contains the MX message instance (or ISO 20022 message instance).*
+
+Business Message
+├── ISO 20022 Business Application Header
+│   ├── `<AppHdr>`
+│   ├── `...`
+│   └── `</AppHdr>`
+└── ISO 20022 Message
+    ├── `<Document>`
+    ├── `...`
+    └── `</Document>`
 
 
 ![](_page_10_Picture_4.jpeg)
@@ -402,10 +441,10 @@ An MX message element specifies its cardinality (number of elements in a set) us
 
 ![](_page_11_Picture_20.jpeg)
 
-# Element Multiplicity
+Element Multiplicity
 
 | Min | Max | Description |
-| :--- | :--- | :--- |
+| :---: | :---: | :--- |
 | 1 | 1 | Required element |
 | 0 | 1 | Optional element |
 | 0 | * | Unlimited element occurrences |
@@ -457,7 +496,55 @@ To visualise an element which is nested and has a choice associated with it. For
 
 ![](_page_14_Picture_1.jpeg)
 
+# Swift MyStandards
+Search Standards Releases CBPR+ Swift Guidelines Groups
 
+# CBPR+
+
+Cross-Border Payments and Reporting Plus (CBPR+) specifications define how ISO 20022 is used for cross-border payments and cash reporting on the Swift network. Performance to CBPR+ specifications will be validated by Swift messaging services and interfaces, so it is imperative that users implement the specifications correctly.
+[Learn more about ISO 20022 Readiness]
+
+[CBPR+ Usage Guidelines and Readiness Portal] [CBPR+ Translation Portal]
+
+## Additional resources
+
+Find out how ISO 20022 is used for cross-border payments and cash reporting on the Swift network.
+
+**CBPR+ user handbook**
+Explains how CBPR+ Usage Guidelines support common business scenarios in cross-border payment and reporting processes.
+[Download]
+
+**Data integrity market practice guidance**
+Defines recommended market practices to report truncated or missing payment information using the MT messaging standard.
+[Download]
+
+**Derived data mapping guidance**
+Provides guidance on how to populate information from one messaging standard to the other subsequent message.
+[Download]
+
+**MT / MX equivalence table**
+Documents the CBPR+ Usage Guidelines supported on Swift InterAct FIN/MX service in comparison with the equivalent MT message.
+[Download]
+
+**CBPR+ and HVPS+ alignment**
+Lists the similarities and differences between the two market practice sets.
+[Download]
+
+**Lessons learnt since go-live**
+This document intends to provide guidance to the community regarding observations that may be identified before or after the migration.
+[Download]
+
+## Samples library
+
+Sample messages sets to test the use cases described in the CBPR+ user handbook.
+
+**CBPR+ sample messages**
+Sample messages sets to test the use cases described in the CBPR+ user handbook.
+[Learn more]
+
+**In-flow translation service sample messages**
+Sample test messages for the In-flow translation service.
+[Learn more]
 
 
 **<https://www2.swift.com/mystandards/#/c/cbpr/landing>**
@@ -468,7 +555,28 @@ To visualise an element which is nested and has a choice associated with it. For
 
 ![](_page_15_Figure_1.jpeg)
 
+Many of the CBPRplus Usage Guidelines have useful key principals and additional information. These can be expanded in MyStandards by clicking on 'show details' in the middle of the Usage Guideline description pane.
 
+***
+
+### Document Details
+
+| Field | Value |
+| :--- | :--- |
+| **Publisher** | Cross Border Payments and Reporting Plus (CBPR+) |
+| **Technical version** | 1 |
+| **Version** | V2.0 FOR IMPLEMENTATION |
+| **Status** | Final |
+| **Standard** | pacs.008.01.08 |
+| **Format** | MX |
+| **Usage identifier** | swift.cbprplus.01 |
+
+*For direct download* *For PDF generation*
+
+### Description: Principles
+
+**1A. AGENTS IDENTIFICATION - RECOMMENDATION**
+*   If
 
 
 ![](_page_15_Picture_2.jpeg)
@@ -495,7 +603,10 @@ Rules inherited from the baseline message and validated on the SWIFT network are
 
 ![](_page_17_Figure_1.jpeg)
 
+"Short issuer organisation". "Business context"{<Business context> n times}. "version"
+A (1-10 chars) $\rightarrow$ B (1-10 chars) $\rightarrow$ C, D,... (1-10 chars) $\rightarrow$ E (2 chars)
 
+Total max 35 char
 
 
 - Type: **String**
@@ -510,9 +621,7 @@ Rules inherited from the baseline message and validated on the SWIFT network are
 
 ![](_page_17_Picture_11.jpeg)
 
-```markdown
-<!-- No text or tables found in the provided image -->
-```
+
 
 
 In CBPR+ the Usage Identifier is captured within the *Business Application Header*, *Business Service* element. More detail can be found in the dedicated Business Application Header chapter of this document,
@@ -523,9 +632,7 @@ In CBPR+ the Usage Identifier is captured within the *Business Application Heade
 
 ![](_page_18_Picture_1.jpeg)
 
-```markdown
-(No text found in image)
-```
+
 
 
 Many ISO 20022 message use data elements represented by codes. Such codes are often externalised from the message itself, enabling maintenance of the code list on a quarterly basis without requiring a new message version.
@@ -536,7 +643,13 @@ example of Charge Bearer in pacs.008 v8 which uses embedded codes
 
 ![](_page_18_Picture_5.jpeg)
 
-
+| Category | Col 1 | Col 2 |
+| :--- | :---: | :---: |
+| Charge Bearer | 1 | 1 |
+| Borne By Debtor [DEBT] | | |
+| Borne By Creditor [CRED] | | |
+| Shared [SHAR] | | |
+| Following Service Level [SLEV] | | |
 
 
 Proprietary Codes may also be available for certain data elements. These are typically inherited from legacy formats and require definitions in user documentation as these are not captured in the baseline ISO 20022 standards
@@ -545,7 +658,32 @@ example of Return Reason Information in pacs.004 v9 which uses externalised code
 
 ![](_page_18_Figure_8.jpeg)
 
+Return Reason Information 0 *
+Originator 0 1
+Reason 0 1
+Code 0 1
+Proprietary 1 1
 
+## Type
+ExternalReturnReason1Code (based on string)
+* minLength: 1
+* maxLength: 4
+
+### Definition
+Reason for the return, as an external reason code.
+
+| Code | Description |
+| :--- | :--- |
+| DT01 | InvalidDate |
+| DT02 | ChequeExpired |
+| ED01 | Correspondent |
+| ED03 | BalanceInfoRe |
+| ED05 | SettlementFail |
+| EMVL | EMVLiabilityS |
+| ERIN | ErrorNotS |
+| FF05 | InvalidLocati |
+| FOCR | FollowingCanc |
+| FR01 | Fraud |
 
 
 ![](_page_18_Picture_9.jpeg)

@@ -29,7 +29,7 @@ from pdf_parser_pymupdf4llm import PdfParser as PyMuPdfParser
 from pdf_parser_kreuzberg import PdfParser as KreuzbergParser
 from pdf_parser_docling import PdfParser as DoclingParser
 from pdf_parser_marker import PdfParser as MarkerParser
-from pdf_parser_lmstudio import PdfParser as LmStudioParser
+from pdf_parser_llm_model import PdfParser as LmStudioParser
 from pdf_parser_marker_llm import PdfParser as MarkerParserLlm
 from pdf_parser_docling_llm import PdfParser as DoclingParserLlm
 from pdf_parser_markitdown_llm import PdfParser as MarkItDownParserLlm

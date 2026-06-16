@@ -240,29 +240,58 @@ Domain
 Introduction to ISO 20022 - Message Identifier
 
 
-| Segment | Description |
-| :--- | :--- |
-| 4!a | Business area |
-| 3!c | Message identifier/functionality |
-| 3!n | Variant |
-| 2!n | Version |
+4!a. 3!c. 3!n. 2!n
+
+Version
+Variant
+Message identifier/functionality
+Business area
 
 
 
-# Example
-**pacs.008.001.08**
-
-- **pacs**: Payments Clearing and Settlement
-- **008**: FI To FI Customer Credit Transfer
-- **001**: Variant 1
-- **08**: Version 8
+## Example
+pacs.008.001.08
+├── Version 8
+│   ├── Variant 1
+│   │   └── FI To FI Customer Credit Transfer
+│   └── Payments Clearing and Settlement
 
 
 ---
 
 <!-- ELEMENT 10 -->
 
+# What is changing? Party Identifiers
 
+***
+
+### Legend
+*   ISO 2022
+*   New parties introduced in ISO 2022
+*   FIN MT format equivalent
+
+***
+
+## Payment Initiation (pain)
+
+Ultimate Debtor $\longrightarrow$ Initiating Party
+
+Initiating Party $\longrightarrow$ Debitor (-50a)
+
+## Payments Clearing & Settlement (pacs)
+
+(72:/INSI)
+
+Previous Instructing Agents $\longleftrightarrow$ Reimbursement Agents
+Reimbursement Agents $\longrightarrow$ Intermediate Agents
+
+Instructing Agent (-52a) $\longrightarrow$ Sender $\longrightarrow$ Instructed Agent (Receiver)
+Intermediate Agents $\longrightarrow$ Instructed Agent (-5a)
+Instructed Agent $\longrightarrow$ Creditor Agent (-57a)
+
+## Cash Management (camt)
+
+Ultimate Creditor $\longrightarrow$ Creditor
 
 
 ---
@@ -275,24 +304,32 @@ The diagram attempts to explain the construct of an ISO 20022 message sent acros
 Within the CBPR+ User Handbook the predominant focus is on the Request Payload, as this is where the business information is contained. However, it is worth noting that a network provider will have additional containers around the Request Payload to perform functionality on its network. This diagram presents the additional containers on the SWIFT network such as the Request Header often referred to as the Technical Header of the message.
 
 
-# Exchange Request
+# Exchange Request Structure
 
-* **Request**
-    * **RequestHeader**: SWIFTNet Headers
-    * **RequestPayload**: Envelope - container for the business message. The business message comprises the application header and 'business' document.
-        * **Application Header**
-        * **Document**: The 'business' document contains the MX message instance (or ISO 20022 message instance).
-            * **MX Message Instance**
-    * **Crypto**
+The Exchange Request contains the following components:
+- Request
+  - RequestHeader
+  - RequestPayload
+  - Application Header
+  - Document
+  - MX Message Instance
+  - Crypto
 
----
+*(Note: This structure interacts with SWIFTNet Headers)*
 
-# Business Message
+**Definitions:**
+*   Envelope - container for the business message
+*   The business message comprises the application header and 'business' document
+*   The 'business' document contains the MX Message Instance or ISO 20022 message instance.
 
-| Component | Description |
-| :--- | :--- |
-| `<AppHdr>` ... `</AppHdr>` | ISO 20022 Business Application Header |
-| `<Document>` ... `</Document>` | ISO 20022 Message |
+# Business Message Decomposition (ISO 20022)
+
+This represents how the Business Message is structured:
+
+- ISO 20022 Business Application Header
+    - <Document>
+        - ...
+        - </Document>
 
 
 ---
@@ -339,17 +376,22 @@ MX message element multiplicity  (occurrences)
 An MX  message element specifies its cardinality (number of elements in a set) using minimum (min) & maximum (max) to describe the occurrences.
 
 
+Credit Transfer Transaction Information
+↓
+- Interbank Settlement Amount
+- Interbank Settlement Date
+
+mark.
 
 
 
-
-# Element Multiplicity
+Element Multiplicity
 
 | Min | Max | Description |
-| :--- | :--- | :--- |
+| :---: | :---: | :--- |
 | 1 | 1 | Required element |
 | 0 | 1 | Optional element |
-| 0 | * | Unlimited element occurrences |
+| * | * | Unlimited element occurrences |
 
 
 ---
@@ -364,7 +406,13 @@ An empty XML element is an element that contains no data content and therefore i
 Acommon example of this is in payment message is Financial Institution.
 
 
-
+| Financial Institution Identification | 1 | 1 | 1 |
+| :--- | :--- | :--- | :--- |
+| BICFI | 0 | 1 | |
+| Clearing System Member Identification | 0 | 1 | |
+| LEI | 0 | 1 | |
+| Name | 0 | 1 | |
+| Postal Address | 0 | 1 | |
 
 
 Whereby technically it is possible to provide just Financial Institution without BICFI, or Name and Postal Address as an example i.e., <FinInstnId></FinInstnId>
@@ -398,7 +446,49 @@ To visualise an element which is nested and has a choice associated with it. For
 The CBPR+ group has published all its usage guidelines in MyStandards
 
 
+# CBPR+
 
+Cross-border Payments and Reporting (CBPR+) specifications allow users to cross-border payments and cash reporting on the Swift network. Customize to CBPR+ specifications will be validated by swift messaging validation tools. For more information, refer to the [CBPR+ User Handbook](https://www.swift.com/document/cbpr-user-handbook).
+
+Learn more about CBPR+ Resources ↗
+
+## Additional resources
+
+Find out how CBPR+ can support your cross border payments and cash reporting on the swift network.
+
+### CBPR+ user handbook
+The CBPR+ user handbook supplies custom business instructions to users across different payment and reporting segments.
+[Download]
+
+### Data integrity market practice guidance
+This document provides guidance on data quality and data integrity for markets using MT message standards.
+[Download]
+
+### CBPR+ and HVPS alignment
+This document describes the differences between the last market practice standard and MT-XML equivalence.
+[Download]
+
+### Derived data mapping guidance
+Provides guidance on how to populate information from one messaging format to another equivalent messaging format.
+[Download]
+
+### MT-XML equivalence table
+Describes the CBPR+ Guidance supported on Swift interface specifications and its equivalence with the equivalent MT message.
+[Download]
+
+### Lessons learnt since go-live
+This document relates to provide guidance to the community regarding lessons learnt since go-live activities on either side of the migration.
+[Download]
+
+## Samples library
+
+### CBPR+ sample messages
+A library of samples to test how cases described in the CBPR+ user handbook.
+[Learn more ↗]
+
+### In-flow transaction service message
+Sample messages for the In-flow transaction service.
+[Learn more ↗]
 
 
 https://www2.swift.com/mystandards/#/c/cbpr/landing
@@ -409,7 +499,24 @@ https://www2.swift.com/mystandards/#/c/cbpr/landing
 Message Usage Guideline - Additional Information and principals
 
 
+# Cross Border Payments and Reporting Plus
+[Navigation Menu] Content | Result View | History | Sample Messages
 
+Many of the CBPRplus Usage Guidelines have useful key principals and additional information. These can be expanded in MyStandards by clicking on 'show details' in the middle of the Usage Guideline description pane.
+
+***
+*(Note: The image contains a large diagram illustrating this concept with a central button labeled "Show details," which is not converted into a text table.)*
+***
+
+| Metadata | Value |
+| :--- | :--- |
+| Publisher | Cross Border Payments and Reporting Plus (CBPR+) |
+| Version | V2.0 FOR IMPLEMENTATION |
+| Status | Final |
+| Release Date | 2022-10-06 |
+| Format | XML |
+
+*Disclaimer text partially visible:* If a field is present, it is not allowed to use Postal Address.
 
 
 ---
@@ -439,7 +546,11 @@ Rules inherited from the baseline message and validated on the SWIFT network are
 Usage Identifier  - Format
 
 
+`<Short issuer organisation>.<Business context>.(<Business context> n times.<version>)`
 
+A (1-10 chars) $\longrightarrow$ B (1-10 chars) $\longrightarrow$ C, D,... (1-10 chars) $\longrightarrow$ E (2 chars)
+
+Total max 35 char
 
 
 Type: String
@@ -480,7 +591,13 @@ Some data element may also be embedded in the message.
 example of Charge Bearer in pacs.008 v8 which uses embedded codes
 
 
-
+# Charge Bearer
+| | |
+| :---: | :---: |
+| Borne By Debtor [DEBT] | |
+| Borne By Creditor [CRED] | |
+| Shared [SHAR] | |
+| Following Service Level [SLEV] | |
 
 
 Proprietary Codes may also be available for certain data elements.
@@ -488,7 +605,35 @@ Proprietary Codes may also be available for certain data elements.
 These are typically inherited from legacy formats and require definitions in user documentation  as these are not captured in the baseline ISO 20022 standards
 
 
+# example of Return Reason Information in pcs.004 v9 which uses externalised codes
 
+[Diagram depicting relationship:
+Return Reason Information o-> Return Reason
+Return Reason o-> Code
+Code o-> Proprietary]
+
+| Type | |
+| :--- | :--- |
+| ExternalReturnReasonCode (has one string) | |
+| min length:1 | |
+| max length:4 | |
+
+**Definition:**
+Return reason for the return, as an external code room...
+
+Etrn.ExternalReturnReasonCode
+Etrn.CodeNameConstraintCode
+Etrn.AllowEmpty
+Etrn.Mandatory
+Etrn.AllowNull
+Etrn.Description
+Etrn.HelpText
+Etrn.IsRequired
+Etrn.DefaultValue
+Etrn.ReadOnly
+Etrn.InternalCode
+
+returnCode
 
 
 19 XLSX format is readable in MS Excel

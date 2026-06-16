@@ -151,15 +151,6 @@ during a coexistence period
 | Exceptional circumstance | Use Case variation | Best practice                      |     |
 3
 
-<!-- Obraz ze strony 3 (112x118px) -->
-```markdown
-<!-- No text or tables found in the image -->
-```
-
-<!-- Obraz ze strony 3 (93x83px) -->
-```markdown
-```
-
 <!-- Obraz ze strony 3 (132x153px) -->
 gpi
 
@@ -360,9 +351,6 @@ for example:
 
 8
 
-<!-- Obraz ze strony 8 (112x102px) -->
-No text found in the image.
-
 ---
 
 <!-- ELEMENT 9 -->
@@ -469,6 +457,16 @@ Message
 
 11
 
+<!-- Obraz ze strony 11 (426x273px) -->
+Exchange Request
+* Request
+    * RequestHeader
+    * RequestPayload
+        * Application Header
+        * Document
+            * MX Message Instance
+        * Crypto
+
 ---
 
 <!-- ELEMENT 12 -->
@@ -518,16 +516,16 @@ An MX  message element specifies its cardinality  (number of elements in a set) 
 
 <!-- Obraz ze strony 12 (208x383px) -->
 | Min | Max |
-|---|---|
-| | |
+| :--- | :--- |
 | 1 | 1 |
 | 0 | 1 |
 | 0 | * |
 
 <!-- Obraz ze strony 12 (231x106px) -->
-- Credit Transfer Transaction Information
-    - Interbank Settlement Amount
-    - Interbank Settlement Date
+Credit Transfer Transaction Information
+$\downarrow$
+Interbank Settlement Amount
+Interbank Settlement Date
 
 ---
 
@@ -547,6 +545,14 @@ In the FINplus service Message Validation (MVal) will validate the messages to e
 | business | data should | beprovided | within a nested | element, | it is provided. |
 | -------- | ----------- | ---------- | --------------- | -------- | --------------- |
 13
+
+<!-- Obraz ze strony 13 (850x188px) -->
+* Financial Institution Identification 1 1
+    * BICFI 0 1
+    * Clearing System Member Identification 0 1
+    * LEI 0 1
+    * Name 0 1
+    * Postal Address 0 1
 
 ---
 
@@ -580,6 +586,50 @@ https://www2.swift.com/mystandards/#/c/cbpr/landing
 
 15
 
+<!-- Obraz ze strony 15 (1762x1089px) -->
+# CBPR+
+
+Cross-Border Payments and Reporting Plus (CBPR+) specifications define how ISO 20022 is used for cross-border payments and cash reporting on the Swift network. Conformance to CBPR+ specifications will be validated by Swift messaging services and interfaces, so it is imperative that users implement the specifications correctly. The resources available on this page aim to help Swift's community to understand and implement CBPR+ specifications.
+
+[Learn more about ISO 20022 Readiness >]
+
+<div style="display: flex; gap: 16px;">
+  <button>CBPR+ Usage Guidelines and Readiness Portal</button>
+  <button>CBPR+ Translation Portal</button>
+</div>
+
+## Additional resources
+
+Find out how ISO 20022 is used for cross-border payments and cash reporting on the Swift network.
+
+***
+
+**CBPR+ user handbook**
+Explains how CBPR+ Usage Guidelines support common business scenarios in cross-border payment and reporting processes.
+[Download >]
+
+**Data integrity market practice guidance**
+Defines recommended market practices to report truncated or missing payment information using the MT messaging standard.
+[Download >]
+
+**CBPR+ and HVPS+ alignment**
+Lists the similarities and differences between the two market practice sets.
+[Download >]
+
+**Derived data mapping guidance**
+Provides guidance on how to populate information from one messaging standard to the other subsequent message.
+[Download >]
+
+**MT / MX equivalence table**
+Documents the CBPR+ Usage Guidelines supported on Swift InterAct FINplus service in comparison with the equivalent MT message.
+[Download >]
+
+**Lessons learnt since go-live**
+This document intends to provide guidance to the community regarding observations that may be identified before or after the migration.
+[Download >]
+
+***
+
 ---
 
 <!-- ELEMENT 16 -->
@@ -594,23 +644,48 @@ UsageGuidelinedescriptionpane.
 16
 
 <!-- Obraz ze strony 16 (1654x303px) -->
-# Cross Border Payments and Reporting Plus
-**PUBLISHED** | MyStandards
+Cross Border Payments and Reporting Plus | PUBLISHED | MyStandards
 
-## CBPRPlus-pac.008.001.08_FIToFICustomerCreditTransfer
-**CBPRPlus_ISO 20022 Portfolio_November 2022_Release 2.0** (Technical version: 1, Version: V2.0 FOR IMPLEMENTATION, Format: MX, Status: Final)
-**Usage Identifier:** swift.cbprplus.01 **Version:** V2.0 FOR IMPLEMENTATION **Status:** Final
+CBPRPlus-pacs.008.FItoFicustomerCreditTransfer
+
+CBPRPlus_ISO 20022 Portfolio_November 2022 Release 2.0 (Technical version: 1, Version: V2.0 FOR IMPLEMENTATION, Format: MX, Status: Final)
+Usage Identifier: swift.cbprplus.01 Version: V2.0 FOR IMPLEMENTATION Status: Final
 
 Show details
 
----
-Content | **Result View** | History | Sample Messages
----
+Content | Result View | History | Sample Messages
 
-[ ] Show xml tags | FI To FI Customer Credit Transfer V08 (pac.008.001.08)
+[ ] Show xml tags
+
+FI To FI Customer Credit Transfer V08 (pacs.008.001.08)
+
+<!-- Obraz ze strony 16 (1354x737px) -->
+| Field | Value |
+| :--- | :--- |
+| Publisher | Cross Border Payments and Reporting Plus (CBPR+) |
+| Technical version | 1 |
+| Version | V2.0 FOR IMPLEMENTATION |
+| Status | Final |
+| Standard | pacs.008.001.08 |
+| Format | MX |
+| Usage Identifier | swift.cbprplus.01 |
+| Documents | For direct download \| For PDF generation |
+
+### Description
+
+**Principles:**
+
+#### 1A. AGENTS IDENTIFICATION - RECOMMENDATION
+
+*   If BIC is present, then (Name & Postal Address) is NOT allowed (ClearingSystemMemberIdentification and LEI may complement) – However, in case of conflicting information, the BIC will always take precedence.
+*   If BIC is absent, (Name & Postal Address) or ClearingSystemMemberIdentification must be present and both are allowed together.
+
+**Note:** "Instructing/ Instructed Agents" must be identified with a BIC - Clearing System Members identification and LEI are optional.
+
+#### 1B. DEBTOR/CREDITOR - PARTY
 
 <!-- Obraz ze strony 16 (154x83px) -->
-Show details
+▼ Show details
 
 ---
 
@@ -714,14 +789,39 @@ XLSX  format is readable in MS Excel
 
 19
 
-<!-- Obraz ze strony 19 (255x231px) -->
-# Type
-ExternalReturnReason1Code (based on string )
-- minLength: 1
-- maxLength: 4
+<!-- Obraz ze strony 19 (516x155px) -->
+| Charge Bearer | 1 | 1 |
+| :--- | :--- | :--- |
+* Borne By Debtor [DEBT]
+* Borne By Creditor [CRED]
+* Shared [SHAR]
+* Following Service Level [SLEV]
 
-# Definition
+<!-- Obraz ze strony 19 (515x163px) -->
+| Attribute | Value 1 | Value 2 |
+| :--- | :--- | :--- |
+| Return Reason Information | 0 | * |
+| Originator | 0 | 1 |
+| Reason | 0 | 1 |
+| Code | 1 | 1 |
+| Proprietary | 1 | 1 |
+
+<!-- Obraz ze strony 19 (255x231px) -->
+## Type
+ExternalReturnReason1Code (based on string)
+* minLength: 1
+* maxLength: 4
+
+## Definition
 Reason for the return, as published in an external reason code list.
+
+<!-- Obraz ze strony 19 (545x228px) -->
+| Code | Description |
+| :--- | :--- |
+| DT01 | InvalidDate |
+| DT02 | ChaqueExpired |
+| ED01 | Correspondent |
+| ED
 
 ---
 
