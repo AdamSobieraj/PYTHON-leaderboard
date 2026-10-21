@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 try:
     import pymupdf  # PyMuPDF
-    FITZ_AVAILABLE = True
+    pymupdf_AVAILABLE = True
 except ImportError:
     FITZ_AVAILABLE = False
     logger.warning("PyMuPDF (fitz) niedostępny! Fizyczne obcinanie marginesów nie zadziała.")

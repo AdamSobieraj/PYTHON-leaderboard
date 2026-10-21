@@ -5,7 +5,7 @@ import tempfile
 import base64
 from typing import List, Union
 
-import fitz
+import pymupdf
 from dotenv import load_dotenv
 from langchain_core.documents import Document
 from markitdown import MarkItDown
@@ -132,20 +132,20 @@ class PdfParser(BaseDocumentParser):
     # Metody prywatne
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _load_pdf(self, file_source: Union[str, io.BytesIO, bytes]) -> fitz.Document:
-        """Wczytuje PDF z dysku lub pamięci RAM do obiektu fitz.Document."""
+    def _load_pdf(self, file_source: Union[str, io.BytesIO, bytes]) -> pymupdf.Document:
+        """Wczytuje PDF z dysku lub pamięci RAM do obiektu pymupdf.Document."""
         if isinstance(file_source, str):
-            return fitz.open(file_source)
+            return pymupdf.open(file_source)
         elif isinstance(file_source, bytes):
-            return fitz.open(stream=file_source, filetype="pdf")
+            return pymupdf.open(stream=file_source, filetype="pdf")
         elif isinstance(file_source, io.BytesIO):
-            return fitz.open(stream=file_source.read(), filetype="pdf")
+            return pymupdf.open(stream=file_source.read(), filetype="pdf")
         else:
             raise ValueError(f"Nieobsługiwany typ źródła: {type(file_source)}")
 
     def _extract_page_text_as_markdown(
         self,
-        pdf_doc: fitz.Document,
+        pdf_doc: pymupdf.Document,
         page_index: int
     ) -> str:
         """
@@ -155,7 +155,7 @@ class PdfParser(BaseDocumentParser):
         """
         try:
             # Utwórz nowy PDF z tylko tą jedną stroną
-            single_page_pdf = fitz.open()
+            single_page_pdf = pymupdf.open()
             single_page_pdf.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
 
             # Zapisz do pamięci RAM
@@ -180,8 +180,8 @@ class PdfParser(BaseDocumentParser):
 
     def _describe_page_images(
         self,
-        pdf_doc: fitz.Document,
-        page: fitz.Page,
+        pdf_doc: pymupdf.Document,
+        page: pymupdf.Page,
         page_num: int
     ) -> List[str]:
         """

@@ -5,7 +5,7 @@ import asyncio
 import concurrent.futures
 from typing import List, Union
 
-import fitz  # PyMuPDF – używany WYŁĄCZNIE do przycięcia marginesów
+import pymupdf  # PyMuPDF – używany WYŁĄCZNIE do przycięcia marginesów
 from langchain_core.documents import Document
 from kreuzberg import extract_file, extract_bytes
 
@@ -93,21 +93,21 @@ class PdfParser(BaseDocumentParser):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _open_pdf(file_source: Union[str, io.BytesIO, bytes]) -> fitz.Document:
+    def _open_pdf(file_source: Union[str, io.BytesIO, bytes]) -> pymupdf.Document:
         """Otwiera plik PDF z dysku lub pamięci RAM."""
         if isinstance(file_source, str):
-            return fitz.Document(file_source)
+            return pymupdf.Document(file_source)
         if isinstance(file_source, bytes):
-            return fitz.Document(stream=file_source, filetype="pdf")
+            return pymupdf.Document(stream=file_source, filetype="pdf")
         if isinstance(file_source, io.BytesIO):
-            return fitz.Document(stream=file_source.read(), filetype="pdf")
+            return pymupdf.Document(stream=file_source.read(), filetype="pdf")
         raise ValueError("Nieobsługiwany typ źródła dla PDF")
 
     # ------------------------------------------------------------------
     # Przycinanie marginesów (usuwanie nagłówków / stopek)
     # ------------------------------------------------------------------
 
-    def _crop_margins(self, pdf_doc: fitz.Document) -> None:
+    def _crop_margins(self, pdf_doc: pymupdf.Document) -> None:
         """
         Przycina CropBox każdej strony, aby usunąć powtarzające się
         nagłówki (góra) i stopki / numery stron (dół).
@@ -117,7 +117,7 @@ class PdfParser(BaseDocumentParser):
         """
         for page in pdf_doc:
             rect = page.rect
-            new_rect = fitz.Rect(
+            new_rect = pymupdf.Rect(
                 rect.x0,
                 rect.y0 + self.TOP_MARGIN_TO_CROP,
                 rect.x1,

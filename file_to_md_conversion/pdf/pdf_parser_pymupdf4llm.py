@@ -34,13 +34,13 @@ class PdfParser(BaseDocumentParser):
             # 1. Wczytanie pliku PDF z obsługą pamięci RAM i dysku lokalnego
             if isinstance(file_source, str):
                 # Z dysku (Local Loader)
-                pdf_doc = fitz.Document(file_source)
+                pdf_doc = pymupdf.Document(file_source)
             elif isinstance(file_source, bytes):
                 # Surowe bajty (S3 Loader)
-                pdf_doc = fitz.Document(stream=file_source, filetype="pdf")
+                pdf_doc = pymupdf.Document(stream=file_source, filetype="pdf")
             elif isinstance(file_source, io.BytesIO):
                 # Strumień pamięci (S3 Loader)
-                pdf_doc = fitz.Document(stream=file_source.read(), filetype="pdf")
+                pdf_doc = pymupdf.Document(stream=file_source.read(), filetype="pdf")
             else:
                 raise ValueError("Nieobsługiwany typ źródła dla PDF")
 
@@ -50,7 +50,7 @@ class PdfParser(BaseDocumentParser):
 
                 # Definiujemy nowy prostokąt odcinając dół (zmniejszamy y1)
                 # Opcjonalnie odcinając górę (zwiększamy y0)
-                new_rect = fitz.Rect(
+                new_rect = pymupdf.Rect(
                     rect.x0,
                     rect.y0 + TOP_MARGIN_TO_CROP,  # Zmień na: rect.y0 + TOP_MARGIN_TO_CROP jeśli chcesz uciąć też nagłówek
                     rect.x1,
@@ -106,7 +106,7 @@ co perfekcyjnie pasuje do naszej logiki LangChain (1 strona = 1 obiekt Document)
 
 Obsługuje też odczyt plików prosto z pamięci RAM (dla S3).
 
-PyMuPDF (fitz) jest napisany w C++. Jest to jeden z najszybszych silników do manipulacji plikami PDF w świecie Pythona.
+PyMuPDF (pymupdf) jest napisany w C++. Jest to jeden z najszybszych silników do manipulacji plikami PDF w świecie Pythona.
 Pobranie i sparsowanie pliku z AWS S3 w locie będzie działać błyskawicznie.
 
 Nagłówki: Duże, pogrubione teksty zostaną zamienione na tagi ## i ###, dzięki czemu podczas chunkowania 

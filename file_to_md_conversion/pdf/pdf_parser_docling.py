@@ -6,7 +6,7 @@ Parser PDF → Markdown oparty na IBM Docling z akceleracją GPU.
 Trójwarstwowe usuwanie nagłówków/stopek stron:
   1. PRE-CROP  — fizyczne przycięcie marginesów (PyMuPDF cropbox)
   2. SEMANTIC  — Docling rozpoznaje PAGE_HEADER / PAGE_FOOTER
-  3. POST-FILTER — filtr po pozycji bounding box (fallback bez fitz)
+  3. POST-FILTER — filtr po pozycji bounding box (fallback bez pymupdf)
 
 Wymaga:
     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 # ── Opcjonalna zależność: PyMuPDF (do fizycznego cropowania) ──────
 try:
-    import fitz
+    import pymupdf
 
     FITZ_AVAILABLE = True
 except ImportError:
@@ -197,7 +197,7 @@ class PdfParser(BaseDocumentParser):
             logger.info(f"Konwersja zakończona: {source_name}")
 
             # ── 3. Budowanie dokumentów ───────────────────────────
-            # Post-filtr bbox tylko gdy fitz niedostępny a marginesy włączone
+            # Post-filtr bbox tylko gdy pymupdf niedostępny a marginesy włączone
             use_postfilter = self._margins_enabled and not FITZ_AVAILABLE
 
             if full_document:
@@ -275,12 +275,12 @@ class PdfParser(BaseDocumentParser):
             original_page_dimensions: {page_no: (width, height)}
         """
         if isinstance(file_source, str):
-            pdf_doc = fitz.Document(file_source)
+            pdf_doc = pymupdf.Document(file_source)
         elif isinstance(file_source, bytes):
-            pdf_doc = fitz.Document(stream=file_source, filetype="pdf")
+            pdf_doc = pymupdf.Document(stream=file_source, filetype="pdf")
         elif isinstance(file_source, io.BytesIO):
             file_source.seek(0)
-            pdf_doc = fitz.Document(stream=file_source.read(), filetype="pdf")
+            pdf_doc = pymupdf.Document(stream=file_source.read(), filetype="pdf")
         else:
             raise ValueError(f"Nieobsługiwany typ: {type(file_source)}")
 
@@ -311,7 +311,7 @@ class PdfParser(BaseDocumentParser):
                 )
                 continue
 
-            new_rect = fitz.Rect(new_x0, new_y0, new_x1, new_y1)
+            new_rect = pymupdf.Rect(new_x0, new_y0, new_x1, new_y1)
             page.set_cropbox(new_rect)
             pages_cropped += 1
 
