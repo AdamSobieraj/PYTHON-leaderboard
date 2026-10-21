@@ -1,5 +1,5 @@
 # debug_pdf_images.py
-# Uruchom: python debug_pdf_images.py
+# Run: python debug_pdf_images.py
 
 import pymupdf  # PyMuPDF
 

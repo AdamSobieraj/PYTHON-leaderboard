@@ -29,11 +29,11 @@ except ImportError:
 
 class PdfParser(BaseDocumentParser):
     """
-    Parser PDF oparty na chmurowej usłudze Azure Document Intelligence.
-    Używa najnowszego modelu 'prebuilt-layout', który natywnie zwraca Markdown.
+    PDF parser based on the cloud Azure Document Intelligence service.
+    Uses the latest 'prebuilt-layout' model, which natively returns Markdown.
 
-    Wykorzystuje Pre-Crop (PyMuPDF) do odcięcia nagłówków i stopek lokalnie,
-    aby nie wysyłać ich do chmury (oszczędza to analizy i zapobiega brudzeniu Markdowna).
+    Uses Pre-Crop (PyMuPDF) to cut headers and footers off locally,
+    so they are not sent to the cloud (saves on analysis and keeps the Markdown clean).
     """
 
     def __init__(
@@ -47,17 +47,17 @@ class PdfParser(BaseDocumentParser):
     ):
         """
         Args:
-            endpoint:             Endpoint Azure (np. https://<twoja-nazwa>.cognitiveservices.azure.com/).
-            key:                  Klucz API Azure.
-            top_margin_crop:      Górny margines do obcięcia [pt] (usuwa nagłówek).
-            bottom_margin_crop:   Dolny margines do obcięcia [pt] (usuwa stopkę z numeracją).
-            left_margin_crop:     Lewy margines do obcięcia [pt].
-            right_margin_crop:    Prawy margines do obcięcia [pt].
+            endpoint:             Azure endpoint (e.g. https://<your-name>.cognitiveservices.azure.com/).
+            key:                  Azure API key.
+            top_margin_crop:      Top margin to crop [pt] (removes the header).
+            bottom_margin_crop:   Bottom margin to crop [pt] (removes the footer with page numbering).
+            left_margin_crop:     Left margin to crop [pt].
+            right_margin_crop:    Right margin to crop [pt].
         """
         if not AZURE_AVAILABLE:
             raise ImportError("Zainstaluj Azure SDK: pip install azure-ai-documentintelligence")
 
-        # ── Autoryzacja Azure ────────────────────────────────────
+        # ── Azure authentication ─────────────────────────────────
         self._endpoint = endpoint or os.getenv("AZURE_DOCUMEN" "T_INTELLIGENCE_ENDPOINT")
         self._key = key or os.getenv("AZURE_DOCUMENT_INTELLIGENCE_KEY")
 
@@ -73,7 +73,7 @@ class PdfParser(BaseDocumentParser):
             credential=AzureKeyCredential(self._key)
         )
 
-        # ── Marginesy ────────────────────────────────────────────
+        # ── Margins ──────────────────────────────────────────────
         self._top_margin = top_margin_crop
         self._bottom_margin = bottom_margin_crop
         self._left_margin = left_margin_crop
@@ -91,7 +91,7 @@ class PdfParser(BaseDocumentParser):
             logger.info("Azure Parser gotowy. Marginesy wyłączone.")
 
     # ══════════════════════════════════════════════════════════════
-    # INTERFEJS PUBLICZNY
+    # PUBLIC INTERFACE
     # ══════════════════════════════════════════════════════════════
 
     def parse(
@@ -100,13 +100,13 @@ class PdfParser(BaseDocumentParser):
             **kwargs,
     ) -> List[Document]:
         """
-        Przetwarza PDF → lista Document (Azure zwraca 1 połączony Document w Markdown).
+        Processes the PDF → list of Documents (Azure returns one merged Document in Markdown).
         """
         source_name = self._get_source_name(file_source)
 
         try:
-            # ── 1. PRE-CROP marginesów (PyMuPDF) ─────────────────
-            # Odcinamy marginesy
+            # ── 1. PRE-CROP of margins (PyMuPDF) ─────────────────
+            # Crop the margins
             original_page_dims = None
 
             if self._margins_enabled and FITZ_AVAILABLE:
@@ -116,7 +116,7 @@ class PdfParser(BaseDocumentParser):
             else:
                 file_bytes = self._get_bytes(file_source)
 
-            # ── 2. Wysyłka do chmury Azure ───────────────────────
+            # ── 2. Upload to the Azure cloud ─────────────────────
             logger.info(f"Wysyłanie pliku do Azure Document Intelligence: {source_name} ({len(file_bytes)} bajtów)")
 
             poller = self.client.begin_analyze_document(
@@ -128,14 +128,14 @@ class PdfParser(BaseDocumentParser):
             result = poller.result()
             logger.info(f"Analiza Azure zakończona sukcesem: {source_name}")
 
-            # ── 3. Budowanie dokumentu ───────────────────────────
+            # ── 3. Building the document ─────────────────────────
             md_text = getattr(result, "content", "")
 
             if not md_text or not md_text.strip():
                 logger.warning(f"Zwrócono pusty tekst dla '{source_name}'")
                 return []
 
-            # Zbieramy metadane
+            # Gather the metadata
             page_count = len(result.pages) if hasattr(result, "pages") and result.pages else 1
 
             metadata = {
@@ -154,7 +154,7 @@ class PdfParser(BaseDocumentParser):
             return []
 
     def diagnostics(self) -> Dict[str, str]:
-        """Informacje diagnostyczne."""
+        """Diagnostic information."""
         return {
             "engine": "Azure Document Intelligence (prebuilt-layout)",
             "endpoint": self._endpoint,
@@ -165,15 +165,15 @@ class PdfParser(BaseDocumentParser):
         }
 
     # ══════════════════════════════════════════════════════════════
-    # WARSTWA 1: PRE-CROP (PyMuPDF cropbox)
+    # LAYER 1: PRE-CROP (PyMuPDF cropbox)
     # ══════════════════════════════════════════════════════════════
 
     def _precrop_pdf(
             self, file_source: Union[str, io.BytesIO, bytes]
     ) -> Tuple[io.BytesIO, Dict[int, Tuple[float, float]]]:
         """
-        Fizyczne przycięcie marginesów za pomocą PyMuPDF cropbox.
-        Chmura Azure otrzyma plik, z którego usunięto fizycznie górę i dół.
+        Physical cropping of the margins using PyMuPDF cropbox.
+        The Azure cloud receives a file with the top and bottom physically removed.
         """
         if isinstance(file_source, str):
             pdf_doc = pymupdf.Document(file_source)
@@ -201,7 +201,7 @@ class PdfParser(BaseDocumentParser):
             remaining_width = new_x1 - new_x0
             remaining_height = new_y1 - new_y0
 
-            # Zapobiegaj zniszczeniu strony przy absurdalnych marginesach
+            # Prevent destroying the page with absurd margins
             if remaining_width < 100 or remaining_height < 100:
                 logger.warning(
                     f"Strona {page_idx + 1}: marginesy zbyt duże. Pomijam przycinanie tej strony."
@@ -212,7 +212,7 @@ class PdfParser(BaseDocumentParser):
             page.set_cropbox(new_rect)
             pages_cropped += 1
 
-        # Zapisujemy przycięty plik do pamięci RAM, gotowy do wysyłki w sieć
+        # Save the cropped file to RAM, ready to be sent over the network
         output = io.BytesIO()
         pdf_doc.save(output)
         pdf_doc.close()
@@ -221,7 +221,7 @@ class PdfParser(BaseDocumentParser):
         return output, original_dims
 
     # ══════════════════════════════════════════════════════════════
-    # METODY POMOCNICZE
+    # HELPER METHODS
     # ══════════════════════════════════════════════════════════════
 
     @staticmethod

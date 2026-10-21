@@ -21,7 +21,7 @@ LLM_API_KEY = os.getenv("LLM_API_KEY")
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
 
-# ── Zależności ───────────────────────────────────────────────
+# ── Dependencies ────────────────────────────────────────────
 try:
     import pymupdf  # PyMuPDF
 
@@ -41,8 +41,8 @@ except ImportError:
 
 class PdfParser(BaseDocumentParser):
     """
-    Parser PDF korzystający z lokalnego modelu wizyjnego w LM Studio.
-    Wyposażony w zabezpieczenia przed pętleniem (stop tokens) oraz wizualny licznik postępu.
+    PDF parser using a local vision model in LM Studio.
+    Equipped with looping protection (stop tokens) and a visual progress counter.
     """
 
     def __init__(
@@ -60,14 +60,14 @@ class PdfParser(BaseDocumentParser):
         self.temperature = temperature
         self.dpi_scale = dpi_scale
 
-        # Timeout na 10 minut, żeby połączenie nie zerwało się przy trudnych stronach
+        # 10-minute timeout so the connection does not drop on difficult pages
         self.client = OpenAI(
             base_url=LLM_BASE_URL,
             api_key=LLM_API_KEY,
             timeout=600.0
         )
 
-        # ── Marginesy ────────────────────────────────────────────
+        # ── Margins ──────────────────────────────────────────────
         self._top_margin = top_margin_crop
         self._bottom_margin = bottom_margin_crop
         self._left_margin = left_margin_crop
@@ -90,7 +90,7 @@ class PdfParser(BaseDocumentParser):
         )
 
     # ══════════════════════════════════════════════════════════════
-    # INTERFEJS PUBLICZNY
+    # PUBLIC INTERFACE
     # ══════════════════════════════════════════════════════════════
 
     def parse(
@@ -106,7 +106,7 @@ class PdfParser(BaseDocumentParser):
             pdf_doc, original_page_dims = self._load_and_precrop_pdf(file_source)
             total_pages = len(pdf_doc)
 
-            # --- WYRAŹNY LOG STARTOWY ---
+            # --- CLEAR STARTUP LOG ---
             logger.info("=" * 60)
             logger.info(f"ROZPOCZĘTO PRZETWARZANIE: {source_name}")
             logger.info(f"Liczba stron do przetworzenia: {total_pages}")
@@ -119,14 +119,14 @@ class PdfParser(BaseDocumentParser):
                 logger.info(f"\n[STRONA {page_no}/{total_pages}] Przygotowywanie obrazu...")
                 start_time = time.time()
 
-                # Konwersja strony PDF do Base64 JPEG
+                # Convert the PDF page to Base64 JPEG
                 base64_image = self._pdf_page_to_base64(page)
                 payload_mb = len(base64_image) / (1024 * 1024)
 
                 logger.info(
                     f"[STRONA {page_no}/{total_pages}] Wysyłanie do LM Studio (Rozmiar: {payload_mb:.2f} MB)...")
 
-                # Zapytanie do LLM (Vision API)
+                # Query to the LLM (Vision API)
                 md_text = self._call_vision_llm(base64_image)
 
                 elapsed_time = time.time() - start_time
@@ -176,7 +176,7 @@ class PdfParser(BaseDocumentParser):
         }
 
     # ══════════════════════════════════════════════════════════════
-    # WARSTWA 1: Wczytywanie i PRE-CROP (PyMuPDF cropbox)
+    # LAYER 1: Loading and PRE-CROP (PyMuPDF cropbox)
     # ══════════════════════════════════════════════════════════════
 
     def _load_and_precrop_pdf(
@@ -218,7 +218,7 @@ class PdfParser(BaseDocumentParser):
         return base64.b64encode(img_data).decode("utf-8")
 
     # ══════════════════════════════════════════════════════════════
-    # WYWOŁANIE LLM (Vision API)
+    # LLM CALL (Vision API)
     # ══════════════════════════════════════════════════════════════
 
     def _call_vision_llm(self, base64_image: str) -> Optional[str]:
@@ -248,9 +248,9 @@ class PdfParser(BaseDocumentParser):
                 ],
                 temperature=self.temperature,
                 max_tokens=4000,
-                # ZABEZPIECZENIA PRZED NIESKOŃCZONĄ PĘTLĄ HALUCYNACJI:
-                top_p=0.1,  # Zmniejsza losowość do minimum
-                stop=["<|im_end|>", "<|endoftext|>", "</s>", "```\n\nUser:"]  # Wymusza koniec tekstu
+                # SAFEGUARDS AGAINST AN INFINITE HALLUCINATION LOOP:
+                top_p=0.1,  # Minimizes randomness
+                stop=["<|im_end|>", "<|endoftext|>", "</s>", "```\n\nUser:"]  # Forces the end of the text
             )
             return response.choices[0].message.content
         except Exception as e:

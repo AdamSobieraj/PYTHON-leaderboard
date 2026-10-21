@@ -15,7 +15,7 @@ from base_parser import BaseDocumentParser
 
 logger = logging.getLogger(__name__)
 
-# Minimalny rozmiar obrazu żeby pominąć ikony/dekoracje (w pikselach)
+# Minimum image size to skip icons/decorations (in pixels)
 MIN_IMAGE_WIDTH  = 80
 MIN_IMAGE_HEIGHT = 80
 
@@ -37,10 +37,10 @@ DEFAULT_LLM_PROMPT = """You are an expert document OCR and layout parsing assist
 
 class PdfParser(BaseDocumentParser):
     """
-    Parser PDF z hybrydowym podejściem:
-    - PyMuPDF     → ekstrakcja tekstu i wykrywanie obrazów
-    - MarkItDown  → konwersja tekstu na Markdown
-    - LLM (vision)→ opis obrazów przez OpenAI-compatible API
+    PDF parser with a hybrid approach:
+    - PyMuPDF     → text extraction and image detection
+    - MarkItDown  → text conversion to Markdown
+    - LLM (vision)→ image description via an OpenAI-compatible API
     """
 
     def __init__(
@@ -78,26 +78,26 @@ class PdfParser(BaseDocumentParser):
         try:
             logger.info(f"[markitdownllm] Konwersja pliku '{source_name}'...")
 
-            # 1. Wczytaj PDF przez PyMuPDF
+            # 1. Load the PDF via PyMuPDF
             pdf_doc = self._load_pdf(file_source)
 
-            # 2. Przetwarzaj stronę po stronie
+            # 2. Process page by page
             documents = []
             for page_index, page in enumerate(pdf_doc):
                 page_num = page_index + 1
                 page_content_parts = []
 
-                # 2a. Tekst strony przez MarkItDown (via plik tymczasowy strony)
+                # 2a. Page text via MarkItDown (through a temporary page file)
                 page_md = self._extract_page_text_as_markdown(pdf_doc, page_index)
                 if page_md.strip():
                     page_content_parts.append(page_md.strip())
 
-                # 2b. Obrazy strony opisane przez LLM
+                # 2b. Page images described by the LLM
                 image_descriptions = self._describe_page_images(pdf_doc, page, page_num)
                 if image_descriptions:
                     page_content_parts.extend(image_descriptions)
 
-                # 2c. Złóż całość strony
+                # 2c. Assemble the full page
                 full_page_content = "\n\n".join(page_content_parts).strip()
 
                 if full_page_content:
@@ -129,11 +129,11 @@ class PdfParser(BaseDocumentParser):
             return []
 
     # ──────────────────────────────────────────────────────────────────────────
-    # Metody prywatne
+    # Private methods
     # ──────────────────────────────────────────────────────────────────────────
 
     def _load_pdf(self, file_source: Union[str, io.BytesIO, bytes]) -> pymupdf.Document:
-        """Wczytuje PDF z dysku lub pamięci RAM do obiektu pymupdf.Document."""
+        """Loads a PDF from disk or RAM into a pymupdf.Document object."""
         if isinstance(file_source, str):
             return pymupdf.open(file_source)
         elif isinstance(file_source, bytes):
@@ -149,20 +149,20 @@ class PdfParser(BaseDocumentParser):
         page_index: int
     ) -> str:
         """
-        Eksportuje pojedynczą stronę jako osobny PDF w pamięci RAM,
-        a następnie konwertuje ją przez MarkItDown na Markdown.
-        Dzięki temu mamy tekst strona-po-stronie bez wywołań LLM dla tekstu.
+        Exports a single page as a separate PDF in RAM,
+        then converts it to Markdown through MarkItDown.
+        This gives us page-by-page text without LLM calls for the text.
         """
         try:
-            # Utwórz nowy PDF z tylko tą jedną stroną
+            # Create a new PDF with just this one page
             single_page_pdf = pymupdf.open()
             single_page_pdf.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
 
-            # Zapisz do pamięci RAM
+            # Save to RAM
             pdf_bytes = single_page_pdf.tobytes()
             single_page_pdf.close()
 
-            # MarkItDown via plik tymczasowy
+            # MarkItDown via a temporary file
             with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
                 tmp_path = tmp.name
                 tmp.write(pdf_bytes)
@@ -185,8 +185,8 @@ class PdfParser(BaseDocumentParser):
         page_num: int
     ) -> List[str]:
         """
-        Wykrywa obrazy na stronie przez PyMuPDF, filtruje małe ikony,
-        a następnie wysyła każdy obraz do LLM vision i zwraca opisy.
+        Detects images on the page via PyMuPDF, filters out small icons,
+        then sends each image to the vision LLM and returns the descriptions.
         """
         descriptions = []
         images = page.get_images(full=True)
@@ -196,7 +196,7 @@ class PdfParser(BaseDocumentParser):
 
         logger.info(f"[markitdownllm] Strona {page_num}: znaleziono {len(images)} obrazów.")
 
-        # Śledzimy już przetworzone xref żeby nie opisywać duplikatów
+        # Track already-processed xrefs so duplicates are not described
         processed_xrefs = set()
 
         for img_info in images:
@@ -211,7 +211,7 @@ class PdfParser(BaseDocumentParser):
                 width      = image_data["width"]
                 height     = image_data["height"]
 
-                # Pomijamy małe ikony i dekoracje
+                # Skip small icons and decorations
                 if width < MIN_IMAGE_WIDTH or height < MIN_IMAGE_HEIGHT:
                     logger.debug(
                         f"[markitdownllm] Pominięto mały obraz "
@@ -220,7 +220,7 @@ class PdfParser(BaseDocumentParser):
                     continue
 
                 img_bytes  = image_data["image"]
-                img_ext    = image_data["ext"]  # png, jpeg itd.
+                img_ext    = image_data["ext"]  # png, jpeg, etc.
                 img_base64 = base64.b64encode(img_bytes).decode("utf-8")
                 mime_type  = f"image/{img_ext}"
 
@@ -232,7 +232,7 @@ class PdfParser(BaseDocumentParser):
                 description = self._call_llm_vision(img_base64, mime_type)
 
                 if description:
-                    # Opakowujemy opis w blok Markdown z metadanymi
+                    # Wrap the description in a Markdown block with metadata
                     block = (
                         f"<!-- Obraz ze strony {page_num} ({width}x{height}px) -->\n"
                         f"{description}"
@@ -249,8 +249,8 @@ class PdfParser(BaseDocumentParser):
 
     def _call_llm_vision(self, img_base64: str, mime_type: str) -> str:
         """
-        Wysyła obraz (base64) do LLM przez OpenAI vision API
-        i zwraca tekstowy opis w Markdown.
+        Sends the image (base64) to the LLM via the OpenAI vision API
+        and returns the textual description in Markdown.
         """
         response = self._llm_client.chat.completions.create(
             model=LLM_MODEL,
@@ -272,7 +272,7 @@ class PdfParser(BaseDocumentParser):
                 }
             ],
             max_tokens=1024,
-            temperature=0.1,  # Niska temperatura = bardziej deterministyczne opisy
+            temperature=0.1,  # Low temperature = more deterministic descriptions
         )
 
         return response.choices[0].message.content.strip()

@@ -5,7 +5,7 @@ import shutil
 import threading
 import psutil
 
-# Próba importu biblioteki do obsługi GPU (NVIDIA)
+# Attempt to import the GPU (NVIDIA) handling library
 try:
     import pynvml
 
@@ -14,7 +14,7 @@ try:
 except Exception:
     HAS_GPU = False
 
-# Próba importu biblioteki do wykresów
+# Attempt to import the chart library
 try:
     import matplotlib.pyplot as plt
 
@@ -24,7 +24,7 @@ except ImportError:
     print("Ostrzeżenie: Biblioteka 'matplotlib' nie jest zainstalowana. Wykresy nie zostaną wygenerowane.")
     print("Zainstaluj ją wpisując: pip install matplotlib")
 
-# Importujemy parsery z użyciem aliasów
+# Import parsers using aliases
 from pdf_parser_pymupdf4llm import PdfParser as PyMuPdfParser
 from pdf_parser_kreuzberg import PdfParser as KreuzbergParser
 from pdf_parser_docling import PdfParser as DoclingParser
@@ -37,7 +37,7 @@ from pdf_parser_markitdown import PdfParser as MarkItDownParser
 
 
 class ResourceMonitor:
-    """Klasa do monitorowania zużycia RAM, CPU i GPU w osobnym wątku."""
+    """Class for monitoring RAM, CPU and GPU usage in a separate thread."""
 
     def __init__(self):
         self.keep_measuring = True
@@ -148,11 +148,11 @@ def run_parser_and_save(parser_name: str, parser_class, pdf_path: str, base_outp
 
 
 def generate_charts(timing_results, base_output_folder, file_name_without_ext):
-    """Funkcja generująca obraz PNG z zestawieniem wyników na wykresach."""
+    """Function generating a PNG image with the results summary on charts."""
     if not HAS_MATPLOTLIB or not timing_results:
         return
 
-    # Przygotowanie danych
+    # Data preparation
     parsers = [res['parser'] for res in timing_results]
     times = [res['time'] for res in timing_results]
     chars = [res['chars'] for res in timing_results]
@@ -165,11 +165,11 @@ def generate_charts(timing_results, base_output_folder, file_name_without_ext):
     else:
         gpu_peaks = [0] * len(parsers)
 
-    # Tworzenie siatki wykresów 2 wiersze x 3 kolumny
+    # Creating a chart grid, 2 rows x 3 columns
     fig, axs = plt.subplots(2, 3, figsize=(16, 10))
     fig.suptitle(f'Benchmark Parserów PDF - Plik: {file_name_without_ext}', fontsize=16, fontweight='bold')
 
-    # Funkcja pomocnicza do rysowania pojedynczego wykresu
+    # Helper function for drawing a single chart
     def plot_bar(ax, data, title, ylabel, color, is_int=False):
         bars = ax.bar(parsers, data, color=color, edgecolor='black')
         ax.set_title(title, fontsize=12)
@@ -177,18 +177,18 @@ def generate_charts(timing_results, base_output_folder, file_name_without_ext):
         ax.tick_params(axis='x', rotation=15)
         ax.grid(axis='y', linestyle='--', alpha=0.7)
 
-        # Dodawanie wartości liczbowych nad słupkami
+        # Adding numeric values above the bars
         for bar in bars:
             yval = bar.get_height()
             label = f'{int(yval)}' if is_int else f'{yval:.1f}'
             ax.text(bar.get_x() + bar.get_width() / 2, yval, label, ha='center', va='bottom', fontsize=10)
 
-    # Wiersz 1
+    # Row 1
     plot_bar(axs[0, 0], times, 'Czas Wykonania (Mniej = Lepiej)', 'Sekundy', '#ff9999')
     plot_bar(axs[0, 1], ram_peaks, 'Maksymalne zużycie RAM (Mniej = Lepiej)', 'Megabajty (MB)', '#66b3ff')
     plot_bar(axs[0, 2], chars, 'Wyciągnięte Znaki (Wydajność Ekstrakcji)', 'Liczba Znaków', '#99ff99', is_int=True)
 
-    # Wiersz 2
+    # Row 2
     plot_bar(axs[1, 0], cpu_avgs, 'Średnie zużycie CPU', 'Procent (%)', '#ffcc99')
     plot_bar(axs[1, 1], elements, 'Wyciągnięte Elementy (np. Strony)', 'Liczba', '#c2c2f0', is_int=True)
 
@@ -200,7 +200,7 @@ def generate_charts(timing_results, base_output_folder, file_name_without_ext):
         axs[1, 2].set_title('Maksymalne zużycie VRAM GPU')
         axs[1, 2].axis('off')
 
-    # Optymalizacja odstępów i zapis
+    # Spacing optimization and save
     plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
     chart_file_path = os.path.join(base_output_folder, f"charts_{file_name_without_ext}.png")
@@ -253,7 +253,7 @@ def process_pdf_to_test_folders(pdf_path: str):
         except Exception as e:
             print(f"[{name}] Wystąpił błąd podczas przetwarzania: {e}")
 
-    # Zapis raportu tekstowego
+    # Save the text report
     base_name = os.path.basename(pdf_path)
     file_name_without_ext = os.path.splitext(base_name)[0]
     timing_file_path = os.path.join(base_output_folder, f"timing_{file_name_without_ext}.txt")
@@ -280,7 +280,7 @@ def process_pdf_to_test_folders(pdf_path: str):
 
             t_file.write("-" * 40 + "\n")
 
-    # Generowanie i zapis wykresów (nowa funkcja)
+    # Generating and saving the charts (new function)
     generate_charts(timing_results, base_output_folder, file_name_without_ext)
 
     print("\nZakończono wszystkie zadania pomyślnie. Sprawdź folder 'output'.")

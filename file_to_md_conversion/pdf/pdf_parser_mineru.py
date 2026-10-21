@@ -12,9 +12,9 @@ from base_parser import BaseDocumentParser
 
 logger = logging.getLogger(__name__)
 
-# ── Kluczowy krok: ustawiamy ścieżkę do konfiguracji ZANIM MinerU ──
-# ── cokolwiek zaimportuje.  Zmienna środowiskowa musi być ustawiona  ──
-# ── PRZED pierwszym importem magic_pdf.                              ──
+# ── Key step: set the config path BEFORE MinerU ────────────────────
+# ── imports anything.  The environment variable must be set         ──
+# ── BEFORE the first magic_pdf import.                              ──
 _PROJECT_ROOT = Path(__file__).resolve().parent
 _CONFIG_PATH = _PROJECT_ROOT / "magic-pdf.json"
 
@@ -27,13 +27,13 @@ else:
 
 class PdfParser(BaseDocumentParser):
     """
-    Parser plików PDF oparty na MinerU (magic-pdf) z akceleracją CUDA.
+    PDF parser based on MinerU (magic-pdf) with CUDA acceleration.
 
-    Automatycznie rozpoznaje:
-    - nagłówki / stopki / numerację stron  →  pomija
-    - tabele                               →  tabele Markdown
-    - wzory matematyczne                   →  LaTeX
-    - skany / obrazy                       →  OCR
+    Automatically recognizes:
+    - headers / footers / page numbers  →  skipped
+    - tables                            →  Markdown tables
+    - math formulas                     →  LaTeX
+    - scans / images                    →  OCR
     """
 
     SKIP_CATEGORIES: FrozenSet[str] = frozenset(
@@ -47,7 +47,7 @@ class PdfParser(BaseDocumentParser):
         self._skip_headers_footers = skip_headers_footers
 
     # ──────────────────────────────────────────────────────────────
-    #  Publiczne API
+    #  Public API
     # ──────────────────────────────────────────────────────────────
     def parse(
         self,
@@ -65,10 +65,10 @@ class PdfParser(BaseDocumentParser):
             from magic_pdf.data.dataset import PymuDocDataset
             from magic_pdf.model.doc_analyze_by_custom_model import doc_analyze
 
-            # 1. PDF → bajty
+            # 1. PDF → bytes
             pdf_bytes = self._read_source(file_source)
 
-            # 2. Klasyfikacja: OCR vs tekst cyfrowy
+            # 2. Classification: OCR vs digital text
             ds = PymuDocDataset(pdf_bytes)
 
             inference = ds.classify()
@@ -79,10 +79,10 @@ class PdfParser(BaseDocumentParser):
                 "OCR" if ocr_mode else "TXT",
             )
 
-            # 3. Analiza layoutu (na GPU)
+            # 3. Layout analysis (on GPU)
             infer_result = ds.apply(doc_analyze, ocr=ocr_mode)
 
-            # 4. Ekstrakcja treści → dokumenty LangChain
+            # 4. Content extraction → LangChain documents
             with tempfile.TemporaryDirectory() as tmp_dir:
                 image_dir = os.path.join(tmp_dir, "images")
                 os.makedirs(image_dir, exist_ok=True)
@@ -117,7 +117,7 @@ class PdfParser(BaseDocumentParser):
             return []
 
     # ──────────────────────────────────────────────────────────────
-    #  Metody prywatne
+    #  Private methods
     # ──────────────────────────────────────────────────────────────
     @staticmethod
     def _read_source(file_source: Union[str, io.BytesIO, bytes]) -> bytes:

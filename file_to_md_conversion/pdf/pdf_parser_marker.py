@@ -1,3 +1,11 @@
+import os
+import platform
+
+# Set backend PyTorch for Apple Silicon before import torch/marker
+if platform.system() == "Darwin" and platform.machine() == "arm64":
+    os.environ.setdefault("TORCH_DEVICE", "mps")
+    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+
 import io
 import logging
 import math
