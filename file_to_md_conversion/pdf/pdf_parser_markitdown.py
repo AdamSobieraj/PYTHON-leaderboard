@@ -2,8 +2,9 @@ import io
 import logging
 import os
 import tempfile
-from typing import List, Union
+from typing import List, Optional, Union
 
+import pymupdf  # PyMuPDF – page analysis, page splitting and OCR
 from langchain_core.documents import Document
 from markitdown import MarkItDown
 
@@ -14,153 +15,186 @@ logger = logging.getLogger(__name__)
 
 class PdfParser(BaseDocumentParser):
     """
-    Parser dla plików PDF oparty na bibliotece MarkItDown (Microsoft).
-    Konwertuje dokumenty PDF na format Markdown z zachowaniem struktury
-    (nagłówki, listy, tabele).
+    PDF parser based on MarkItDown (Microsoft) + PyMuPDF, adapted for contracts
+    (mixed PDFs: text pages + scans of signatures, annexes, attachments).
 
-    MarkItDown wspiera wiele formatów (PDF, DOCX, XLSX, PPTX, HTML itp.),
-    co czyni go wszechstronnym narzędziem do pre-processingu RAG.
+    MarkItDown does not perform OCR for PDFs, so the file is processed page by page:
+      - page with a text layer       -> MarkItDown (keeps Markdown structure),
+      - image-only / near-empty page -> OCR (PyMuPDF + Tesseract),
+      - page with no text or images  -> skipped (truly empty).
+
+    OCR requires Tesseract with the language pack (e.g. 'pol') and, if it is not
+    in the default location, the TESSDATA_PREFIX environment variable.
     """
 
-    def __init__(self):
-        # Inicjalizacja konwertera MarkItDown
-        # llm_client=None oznacza tryb czysto lokalny, bez wywołań do API
+    # If a page has images and fewer characters than this, it is treated as a scan
+    # (e.g. a scanned page with only a printed page number in the text layer)
+    MIN_TEXT_CHARS = 20
+
+    def __init__(self, ocr_language: str = "pol", ocr_dpi: int = 300):
+        """
+        Args:
+            ocr_language: Tesseract language code(s), e.g. "pol" or "pol+eng".
+            ocr_dpi:      Resolution used for OCR rendering.
+        """
+        # llm_client=None means a purely local mode, no API calls
         self._converter = MarkItDown(llm_client=None, llm_model=None)
+        self._ocr_language = ocr_language
+        self._ocr_dpi = ocr_dpi
+
+    # ------------------------------------------------------------------
+    # Main method
+    # ------------------------------------------------------------------
 
     def parse(
         self,
         file_source: Union[str, io.BytesIO, bytes],
-        **kwargs
+        **kwargs,
     ) -> List[Document]:
-
         source_name = (
             os.path.basename(file_source)
             if isinstance(file_source, str)
-            else "strumień pamięci (MarkItDown)"
+            else "memory stream (MarkItDown)"
         )
 
+        documents: List[Document] = []
+        empty_pages: List[int] = []
+        failed_pages: List[int] = []
+        pdf_doc = None
+
         try:
-            markdown_text = self._convert_to_markdown(file_source)
+            pdf_doc = self._open_pdf(file_source)
 
-            if not markdown_text or not markdown_text.strip():
-                logger.warning(
-                    f"[MarkItDown] Plik '{source_name}' "
-                    f"zwrócił pusty wynik po konwersji."
-                )
-                return []
+            for i, page in enumerate(pdf_doc):
+                page_number = i + 1
+                plain_text = page.get_text().strip()
+                has_images = bool(page.get_images(full=True))
 
-            # MarkItDown zwraca cały dokument jako jeden string Markdown.
-            # Dzielimy go na "strony" po separatorach form feed (\f),
-            # które niektóre konwertery PDF wstawiają jako znaczniki strony.
-            pages = self._split_into_pages(markdown_text)
+                if not plain_text and not has_images:
+                    empty_pages.append(page_number)
+                    continue
 
-            documents = []
-            for i, page_text in enumerate(pages):
-                stripped = page_text.strip()
-                if stripped:
-                    doc = Document(
-                        page_content=stripped,
-                        metadata={
-                            "page_number": i + 1,
-                            "source": source_name,
-                            "parser": "markitdown",
-                        }
+                method = "markitdown"
+                text = ""
+
+                try:
+                    if plain_text:
+                        text = self._convert_page_markitdown(pdf_doc, i)
+                        if not text:
+                            # Fallback: plain text from PyMuPDF
+                            text = plain_text
+                            method = "pymupdf-text"
+
+                    # Scanned page (or a page where the text layer is just a footer)
+                    if has_images and len(plain_text) < self.MIN_TEXT_CHARS:
+                        ocr_text = self._ocr_page(page)
+                        if len(ocr_text) > len(text):
+                            text = ocr_text
+                            method = "ocr"
+                except Exception as e:
+                    logger.error(
+                        f"[MarkItDown] Page {page_number} error ('{source_name}'): {e}"
                     )
-                    documents.append(doc)
+                    failed_pages.append(page_number)
+                    continue
+
+                if text:
+                    documents.append(
+                        Document(
+                            page_content=text,
+                            metadata={
+                                "page_number": page_number,
+                                "source": source_name,
+                                "parser": "markitdown",
+                                "extraction_method": method,
+                            },
+                        )
+                    )
+                else:
+                    failed_pages.append(page_number)
+
+            if empty_pages:
+                logger.info(f"[MarkItDown] Skipped empty pages {empty_pages} ('{source_name}')")
+            if failed_pages:
+                logger.warning(
+                    f"[MarkItDown] No text from pages {failed_pages} ('{source_name}') "
+                    f"- check OCR (Tesseract, language pack, TESSDATA_PREFIX)"
+                )
+            if not documents:
+                logger.warning(
+                    f"[MarkItDown] File '{source_name}' returned an empty result after conversion."
+                )
 
             logger.info(
-                f"[MarkItDown] Plik '{source_name}' sparsowany. "
-                f"Stron/segmentów: {len(documents)}."
+                f"[MarkItDown] File '{source_name}' parsed. Pages: {len(documents)}."
             )
             return documents
 
         except Exception as e:
             logger.error(
-                f"[MarkItDown] Błąd przetwarzania pliku '{source_name}': {e}",
-                exc_info=True
+                f"[MarkItDown] Error processing file '{source_name}': {e}",
+                exc_info=True,
             )
             return []
+        finally:
+            if pdf_doc is not None:
+                pdf_doc.close()
 
     # ------------------------------------------------------------------
-    # Metody prywatne
+    # Page-level processing
     # ------------------------------------------------------------------
 
-    def _convert_to_markdown(self, file_source: Union[str, io.BytesIO, bytes]) -> str:
-        """
-        Wywołuje MarkItDown i zwraca surowy tekst Markdown.
+    def _convert_page_markitdown(self, pdf_doc: pymupdf.Document, page_index: int) -> str:
+        """Cuts a single page into a separate PDF and converts it with MarkItDown."""
+        single = pymupdf.open()
+        try:
+            single.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
+            page_bytes = single.tobytes()
+        finally:
+            single.close()
 
-        MarkItDown.convert() akceptuje:
-          - ścieżkę do pliku (str)  → bezpośredni odczyt
-          - obiekt BytesIO          → poprzez plik tymczasowy (obejście)
-          - surowe bajty (bytes)    → poprzez plik tymczasowy (obejście)
+        return self._convert_bytes_via_tempfile(page_bytes)
 
-        Uwaga: aktualne API MarkItDown nie obsługuje natywnie strumieni
-        BytesIO, dlatego dla danych z pamięci RAM używamy pliku tymczasowego.
-        """
-
-        if isinstance(file_source, str):
-            # Ścieżka lokalna — najprostszy przypadek
-            result = self._converter.convert(file_source)
-            return result.text_content
-
-        # Dane binarne lub strumień → zapis do pliku tymczasowego
-        if isinstance(file_source, bytes):
-            raw_bytes = file_source
-        elif isinstance(file_source, io.BytesIO):
-            raw_bytes = file_source.read()
-        else:
-            raise ValueError(
-                f"[MarkItDown] Nieobsługiwany typ źródła: {type(file_source)}"
-            )
-
-        return self._convert_bytes_via_tempfile(raw_bytes)
+    def _ocr_page(self, page: pymupdf.Page) -> str:
+        """Runs Tesseract OCR on a page (full-page OCR, ignoring the text layer)."""
+        tessdata: Optional[str] = os.environ.get("TESSDATA_PREFIX")
+        textpage = page.get_textpage_ocr(
+            language=self._ocr_language,
+            dpi=self._ocr_dpi,
+            full=True,
+            tessdata=tessdata,
+        )
+        return page.get_text(textpage=textpage).strip()
 
     def _convert_bytes_via_tempfile(self, raw_bytes: bytes) -> str:
         """
-        Zapisuje bajty do tymczasowego pliku .pdf na dysku,
-        konwertuje go przez MarkItDown, a następnie usuwa plik.
-        Używa context managera, by mieć pewność że plik zostanie usunięty
-        nawet w przypadku wyjątku.
+        Writes the bytes to a temporary .pdf file, converts it with MarkItDown
+        and removes the file (also when an exception occurs).
         """
-        # delete=False bo MarkItDown sam otwiera plik po ścieżce
-        with tempfile.NamedTemporaryFile(
-            suffix=".pdf",
-            delete=False
-        ) as tmp_file:
+        # delete=False because MarkItDown opens the file by path itself
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_file:
             tmp_path = tmp_file.name
             tmp_file.write(raw_bytes)
 
         try:
             result = self._converter.convert(tmp_path)
-            return result.text_content
+            return (result.text_content or "").strip()
         finally:
-            # Gwarantowane sprzątanie pliku tymczasowego
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
+    # ------------------------------------------------------------------
+    # Loading the PDF (supports str, bytes, BytesIO)
+    # ------------------------------------------------------------------
+
     @staticmethod
-    def _split_into_pages(markdown_text: str) -> List[str]:
-        """
-        Próbuje podzielić Markdown na logiczne strony.
-
-        Strategia podziału (w kolejności priorytetu):
-        1. Znak form feed (\\f) — wstawiany przez niektóre konwertery PDF
-           jako jawny znacznik podziału strony.
-        2. Jeśli brak \\f — zwraca cały dokument jako jedną "stronę",
-           co jest zachowaniem bezpiecznym i zgodnym z interfejsem
-           (1 Document = cały plik).
-        """
-        if "\f" in markdown_text:
-            pages = markdown_text.split("\f")
-            logger.debug(
-                f"[MarkItDown] Znaleziono znaczniki \\f. "
-                f"Podział na {len(pages)} stron."
-            )
-            return pages
-
-        # Brak jawnych podziałów strony → jeden duży dokument
-        logger.debug(
-            "[MarkItDown] Brak znaczników \\f. "
-            "Zwracam cały dokument jako jeden segment."
-        )
-        return [markdown_text]
+    def _open_pdf(file_source: Union[str, io.BytesIO, bytes]) -> pymupdf.Document:
+        """Opens a PDF file from disk or memory."""
+        if isinstance(file_source, str):
+            return pymupdf.Document(file_source)
+        if isinstance(file_source, bytes):
+            return pymupdf.Document(stream=file_source, filetype="pdf")
+        if isinstance(file_source, io.BytesIO):
+            file_source.seek(0)
+            return pymupdf.Document(stream=file_source.read(), filetype="pdf")
+        raise ValueError(f"[MarkItDown] Unsupported source type: {type(file_source)}")

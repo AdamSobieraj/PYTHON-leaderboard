@@ -1,11 +1,11 @@
 # debug_pdf_images.py
 # Uruchom: python debug_pdf_images.py
 
-import fitz  # PyMuPDF
+import pymupdf  # PyMuPDF
 
 PDF_PATH = "data/ISO_20022_Programme_UHB_SR2023_Edition-1-20.pdf"
 
-pdf = fitz.open(PDF_PATH)
+pdf = pymupdf.open(PDF_PATH)
 
 total_images = 0
 
