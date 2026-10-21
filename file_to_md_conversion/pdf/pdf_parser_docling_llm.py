@@ -41,7 +41,7 @@ class PdfParser(BaseDocumentParser):
     ):
         self._device = "cuda" if use_gpu and torch.cuda.is_available() else "cpu"
 
-        # Domyślna konfiguracja filtrów
+        # Default filter configuration
         self._filters_config = {
             'size': {
                 'enabled': True,
@@ -60,7 +60,7 @@ class PdfParser(BaseDocumentParser):
             }
         }
 
-        # Statystyki filtrowania
+        # Filtering statistics
         self._filter_stats = {
             'total_images': 0,
             'accepted': 0,
@@ -70,7 +70,7 @@ class PdfParser(BaseDocumentParser):
             'rejected_no_image': 0,
         }
 
-        # Konfiguracja promptu
+        # Prompt configuration
         self._vision_prompt_template = None
 
         pipeline_options = PdfPipelineOptions(
@@ -100,14 +100,14 @@ class PdfParser(BaseDocumentParser):
             max_tokens=1200
         )
 
-    # Metody konfiguracji filtra rozmiaru
+    # Size filter configuration methods
     def configure_size_filter(self, enabled: bool = True, min_image_size: int = 10000):
         """
-        Konfiguruje filtr rozmiaru obrazu.
+        Configures the image size filter.
 
         Args:
-            enabled: Czy filtr jest włączony
-            min_image_size: Minimalna powierzchnia obrazu w pikselach
+            enabled: Whether the filter is enabled
+            min_image_size: Minimum image area in pixels
         """
         self._filters_config['size']['enabled'] = enabled
         self._filters_config['size']['min_image_size'] = min_image_size
@@ -115,12 +115,12 @@ class PdfParser(BaseDocumentParser):
         return self
 
     def disable_size_filter(self):
-        """Wyłącza filtr rozmiaru."""
+        """Disables the size filter."""
         self._filters_config['size']['enabled'] = False
         logger.info("Filtr rozmiaru: WYŁĄCZONY")
         return self
 
-    # Metody konfiguracji filtra pozycji
+    # Position filter configuration methods
     def configure_position_filter(
             self,
             enabled: bool = True,
@@ -128,12 +128,12 @@ class PdfParser(BaseDocumentParser):
             footer_margin: float = 0.10
     ):
         """
-        Konfiguruje filtr pozycji obrazu na stronie.
+        Configures the image position filter on the page.
 
         Args:
-            enabled: Czy filtr jest włączony
-            header_margin: Margines nagłówka (0.0 - 1.0)
-            footer_margin: Margines stopki (0.0 - 1.0)
+            enabled: Whether the filter is enabled
+            header_margin: Header margin (0.0 - 1.0)
+            footer_margin: Footer margin (0.0 - 1.0)
         """
         self._filters_config['position']['enabled'] = enabled
         self._filters_config['position']['header_margin'] = header_margin
@@ -143,12 +143,12 @@ class PdfParser(BaseDocumentParser):
         return self
 
     def disable_position_filter(self):
-        """Wyłącza filtr pozycji."""
+        """Disables the position filter."""
         self._filters_config['position']['enabled'] = False
         logger.info("Filtr pozycji: WYŁĄCZONY")
         return self
 
-    # Metody konfiguracji filtra proporcji
+    # Aspect ratio filter configuration methods
     def configure_aspect_ratio_filter(
             self,
             enabled: bool = True,
@@ -157,13 +157,13 @@ class PdfParser(BaseDocumentParser):
             square_logo_threshold: int = 20000
     ):
         """
-        Konfiguruje filtr proporcji obrazu.
+        Configures the image aspect ratio filter.
 
         Args:
-            enabled: Czy filtr jest włączony
-            min_aspect_ratio: Minimalna proporcja szerokość/wysokość
-            max_aspect_ratio: Maksymalna proporcja szerokość/wysokość
-            square_logo_threshold: Próg powierzchni dla kwadratowych logo
+            enabled: Whether the filter is enabled
+            min_aspect_ratio: Minimum width/height ratio
+            max_aspect_ratio: Maximum width/height ratio
+            square_logo_threshold: Area threshold for square logos
         """
         self._filters_config['aspect_ratio']['enabled'] = enabled
         self._filters_config['aspect_ratio']['min_aspect_ratio'] = min_aspect_ratio
@@ -174,14 +174,14 @@ class PdfParser(BaseDocumentParser):
         return self
 
     def disable_aspect_ratio_filter(self):
-        """Wyłącza filtr proporcji."""
+        """Disables the aspect ratio filter."""
         self._filters_config['aspect_ratio']['enabled'] = False
         logger.info("Filtr proporcji: WYŁĄCZONY")
         return self
 
-    # Metody globalne
+    # Global methods
     def disable_all_filters(self):
-        """Wyłącza wszystkie filtry - wszystkie obrazy będą analizowane."""
+        """Disables all filters - every image will be analyzed."""
         self._filters_config['size']['enabled'] = False
         self._filters_config['position']['enabled'] = False
         self._filters_config['aspect_ratio']['enabled'] = False
@@ -189,7 +189,7 @@ class PdfParser(BaseDocumentParser):
         return self
 
     def enable_all_filters(self):
-        """Włącza wszystkie filtry z domyślnymi ustawieniami."""
+        """Enables all filters with default settings."""
         self._filters_config['size']['enabled'] = True
         self._filters_config['position']['enabled'] = True
         self._filters_config['aspect_ratio']['enabled'] = True
@@ -197,15 +197,15 @@ class PdfParser(BaseDocumentParser):
         return self
 
     def get_filters_config(self) -> dict:
-        """Zwraca aktualną konfigurację filtrów."""
+        """Returns the current filter configuration."""
         return self._filters_config.copy()
 
     def get_filter_stats(self) -> dict:
-        """Zwraca statystyki filtrowania obrazów."""
+        """Returns the image filtering statistics."""
         return self._filter_stats.copy()
 
     def reset_filter_stats(self):
-        """Resetuje statystyki filtrowania."""
+        """Resets the filtering statistics."""
         self._filter_stats = {
             'total_images': 0,
             'accepted': 0,
@@ -218,17 +218,17 @@ class PdfParser(BaseDocumentParser):
 
     def set_vision_prompt(self, prompt: str):
         """
-        Ustawia własny prompt dla analizy obrazów przez VLM.
+        Sets a custom prompt for image analysis by the VLM.
 
         Args:
-            prompt: Tekst promptu, który zostanie wysłany do modelu wizyjnego
+            prompt: The prompt text that will be sent to the vision model
         """
         self._vision_prompt_template = prompt
         logger.info("Ustawiono niestandardowy prompt dla VLM")
         return self
 
     def reset_vision_prompt(self):
-        """Resetuje prompt do wartości domyślnej."""
+        """Resets the prompt to its default value."""
         self._vision_prompt_template = None
         logger.info("Przywrócono domyślny prompt dla VLM")
         return self
@@ -280,7 +280,7 @@ class PdfParser(BaseDocumentParser):
                     metadata={"page_number": p, "source": source_name}
                 ))
 
-            # Podsumowanie filtrowania
+            # Filtering summary
             logger.info(f"[STATS] Obrazów łącznie: {self._filter_stats['total_images']}")
             logger.info(f"[STATS] Zaakceptowanych: {self._filter_stats['accepted']}")
             logger.info(f"[STATS] Odrzuconych - brak obrazu: {self._filter_stats['rejected_no_image']}")
@@ -296,8 +296,8 @@ class PdfParser(BaseDocumentParser):
 
     def _should_process_image(self, item) -> bool:
         """
-        Główna metoda decydująca czy obraz powinien być wysłany do VLM.
-        Uruchamia wszystkie włączone filtry.
+        Main method deciding whether the image should be sent to the VLM.
+        Runs all enabled filters.
         """
         try:
             if not hasattr(item, "image") or item.image is None:
@@ -314,19 +314,19 @@ class PdfParser(BaseDocumentParser):
             width, height = pil_img.size
             logger.debug(f"[DEBUG] Sprawdzam obraz {width}x{height}px")
 
-            # Filtr 1: Rozmiar obrazu
+            # Filter 1: Image size
             if self._filters_config['size']['enabled']:
                 if not self._filter_by_size(pil_img):
                     self._filter_stats['rejected_size'] += 1
                     return False
 
-            # Filtr 2: Pozycja na stronie
+            # Filter 2: Position on the page
             if self._filters_config['position']['enabled']:
                 if not self._filter_by_position(item):
                     self._filter_stats['rejected_position'] += 1
                     return False
 
-            # Filtr 3: Proporcje (aspect ratio)
+            # Filter 3: Aspect ratio
             if self._filters_config['aspect_ratio']['enabled']:
                 if not self._filter_by_aspect_ratio(pil_img):
                     self._filter_stats['rejected_aspect_ratio'] += 1
@@ -341,11 +341,11 @@ class PdfParser(BaseDocumentParser):
 
     def _filter_by_size(self, pil_img) -> bool:
         """
-        Filtruje obrazy po rozmiarze - małe obrazy to często logo.
+        Filters images by size - small images are often logos.
 
         Returns:
-            True jeśli obraz jest wystarczająco duży
-            False jeśli obraz jest zbyt mały (prawdopodobnie logo)
+            True if the image is large enough
+            False if the image is too small (probably a logo)
         """
         width, height = pil_img.size
         area = width * height
@@ -360,12 +360,12 @@ class PdfParser(BaseDocumentParser):
 
     def _filter_by_position(self, item) -> bool:
         """
-        Filtruje obrazy znajdujące się w nagłówkach lub stopkach strony.
-        Logo firmowe często umieszczane jest właśnie tam.
+        Filters images located in the page header or footer.
+        Company logos are often placed exactly there.
 
         Returns:
-            True jeśli obraz jest w głównej części strony
-            False jeśli obraz jest w nagłówku lub stopce
+            True if the image is in the main part of the page
+            False if the image is in the header or footer
         """
         if not hasattr(item, "prov") or not item.prov:
             logger.debug(f"[FILTER_POSITION] Brak prov - akceptuję")
@@ -386,7 +386,7 @@ class PdfParser(BaseDocumentParser):
             y_top = None
             page_height = None
 
-            # Różne warianty dostępu do współrzędnych w Docling
+            # Different coordinate access variants in Docling
             if hasattr(bbox, 't') and hasattr(bbox, 'page_height'):
                 y_top = bbox.t
                 page_height = bbox.page_height
@@ -435,15 +435,15 @@ class PdfParser(BaseDocumentParser):
 
     def _filter_by_aspect_ratio(self, pil_img) -> bool:
         """
-        Filtruje obrazy po proporcjach szerokość/wysokość.
-        Logo często mają charakterystyczne proporcje:
-        - Kwadratowe (aspect ratio ~ 1.0)
-        - Bardzo szerokie bannery (aspect ratio > 5.0)
-        - Bardzo wysokie (aspect ratio < 0.3)
+        Filters images by width/height ratio.
+        Logos often have characteristic ratios:
+        - Square (aspect ratio ~ 1.0)
+        - Very wide banners (aspect ratio > 5.0)
+        - Very tall (aspect ratio < 0.3)
 
         Returns:
-            True jeśli proporcje wskazują na diagram/schemat
-            False jeśli proporcje wskazują na logo/dekorację
+            True if the ratio indicates a diagram/schematic
+            False if the ratio indicates a logo/decoration
         """
         width, height = pil_img.size
 
@@ -459,13 +459,13 @@ class PdfParser(BaseDocumentParser):
         max_ratio = config['max_aspect_ratio']
         square_threshold = config['square_logo_threshold']
 
-        # Małe kwadratowe obrazy to prawdopodobnie logo
+        # Small square images are probably logos
         if 0.8 < aspect_ratio < 1.2 and area < square_threshold:
             logger.debug(
                 f"[FILTER_ASPECT] Małe kwadratowe logo ({width}x{height}, ratio={aspect_ratio:.2f}, area={area})")
             return False
 
-        # Zbyt wąskie lub szerokie obrazy (bannery, paski)
+        # Images that are too narrow or wide (banners, strips)
         if aspect_ratio < min_ratio or aspect_ratio > max_ratio:
             logger.debug(f"[FILTER_ASPECT] Nieprawidłowe proporcje ({width}x{height}, "
                          f"ratio={aspect_ratio:.2f} poza zakresem {min_ratio}-{max_ratio})")
@@ -475,7 +475,7 @@ class PdfParser(BaseDocumentParser):
         return True
 
     def _analyze_image_with_vlm(self, item) -> str:
-        """Wysyła obrazek do LLM i pobiera jego opis."""
+        """Sends the image to the LLM and fetches its description."""
         try:
             if not hasattr(item, "image") or item.image is None:
                 return "[Błąd: Obraz nie został wygenerowany przez Docling]"
@@ -513,8 +513,8 @@ class PdfParser(BaseDocumentParser):
 
     def _get_vision_prompt(self) -> str:
         """
-        Zwraca prompt używany do analizy obrazów przez VLM.
-        Wydzielone do osobnej metody dla łatwej edycji.
+        Returns the prompt used for image analysis by the VLM.
+        Separated into its own method for easy editing.
         """
         if self._vision_prompt_template:
             return self._vision_prompt_template

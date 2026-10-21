@@ -29,8 +29,8 @@ LLM_API_KEY = os.getenv("LLM_API_KEY")
 
 class PdfParser(BaseDocumentParser):
     """
-    Parser PDF oparty na Marker (0.3.1+) z analizą Vision (Qwen2.5-vl)
-    i konfigurowalnymi filtrami obrazów.
+    PDF parser based on Marker (0.3.1+) with Vision analysis (Qwen2.5-vl)
+    and configurable image filters.
     """
 
     def __init__(self):
@@ -192,7 +192,7 @@ class PdfParser(BaseDocumentParser):
             final_documents = []
             max_pages_to_process = kwargs.get('max_pages', 999)
 
-            # PRZETWARZANIE KAŻDEJ STRONY
+            # PROCESSING EACH PAGE
             for i, page_content in enumerate(pages_raw):
                 page_no = i + 1
                 content = page_content.strip()
@@ -201,21 +201,21 @@ class PdfParser(BaseDocumentParser):
 
                 logger.info(f"Przetwarzanie strony {page_no}/{total_pages}...")
 
-                # ZNAJDŹ WSZYSTKIE REFERENCJE DO OBRAZÓW wraz z całym markdown
-                # Wzorzec: ![dowolny tekst](ścieżka)
+                # FIND ALL IMAGE REFERENCES along with the full markdown
+                # Pattern: ![any text](path)
                 image_pattern = r'(!\[.*?\]\(([^)]+)\))'
                 matches = re.findall(image_pattern, content)
 
                 logger.info(f"  Znaleziono {len(matches)} referencji do obrazów")
 
-                # PRZETWARZAJ KAŻDĄ REFERENCJĘ
+                # PROCESS EACH REFERENCE
                 for full_markdown_ref, img_path in matches:
-                    # full_markdown_ref to np: '![](image.jpg)' lub '![alt text](image.jpg)'
-                    # img_path to np: '_page_0_Picture_0.jpeg'
+                    # full_markdown_ref is e.g.: '![](image.jpg)' or '![alt text](image.jpg)'
+                    # img_path is e.g.: '_page_0_Picture_0.jpeg'
 
                     logger.debug(f"  -> Referencja: '{full_markdown_ref}' -> ścieżka: '{img_path}'")
 
-                    # Szukaj obrazu
+                    # Look for the image
                     pil_img = self._find_image(img_path, extracted_images)
 
                     if pil_img is None:
@@ -224,7 +224,7 @@ class PdfParser(BaseDocumentParser):
 
                     self._filter_stats['total_images'] += 1
 
-                    # Sprawdź filtry
+                    # Check the filters
                     if self._should_process_image(pil_img, img_path):
                         self._filter_stats['accepted'] += 1
                         logger.info(f"     [VISION] Analizuję '{img_path}'...")
@@ -232,10 +232,10 @@ class PdfParser(BaseDocumentParser):
                         desc = self._analyze_image_with_vlm(pil_img)
                         logger.info(f"     [VISION] OK ({time.time() - vlm_start:.2f}s)")
 
-                        # ZAMIEŃ DOKŁADNĄ REFERENCJĘ (z alt textem jeśli jest)
+                        # REPLACE THE EXACT REFERENCE (with alt text if present)
                         replacement = f'{full_markdown_ref}\n\n{desc}\n'
 
-                        # Użyj replace tylko RAZ dla tej konkretnej referencji
+                        # Use replace only ONCE for this specific reference
                         if full_markdown_ref in content:
                             content = content.replace(full_markdown_ref, replacement, 1)
                             logger.debug(f"     Wstawiono opis AI po obrazie")
@@ -277,7 +277,7 @@ class PdfParser(BaseDocumentParser):
             return []
 
     def _find_image(self, img_ref: str, extracted_images: Dict) -> Optional[object]:
-        """Szuka obrazu próbując różnych wariantów nazwy."""
+        """Looks for the image by trying different name variants."""
         variants = [
             img_ref,
             os.path.basename(img_ref),

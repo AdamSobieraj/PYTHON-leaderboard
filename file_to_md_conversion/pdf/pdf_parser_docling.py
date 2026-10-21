@@ -1,14 +1,14 @@
 """
 docling_pdf_parser.py
 
-Parser PDF → Markdown oparty na IBM Docling z akceleracją GPU.
+PDF → Markdown parser based on IBM Docling with GPU acceleration.
 
-Trójwarstwowe usuwanie nagłówków/stopek stron:
-  1. PRE-CROP  — fizyczne przycięcie marginesów (PyMuPDF cropbox)
-  2. SEMANTIC  — Docling rozpoznaje PAGE_HEADER / PAGE_FOOTER
-  3. POST-FILTER — filtr po pozycji bounding box (fallback bez pymupdf)
+Three-layer header/footer removal:
+  1. PRE-CROP  — physical cropping of the margins (PyMuPDF cropbox)
+  2. SEMANTIC  — Docling recognizes PAGE_HEADER / PAGE_FOOTER
+  3. POST-FILTER — filter by bounding box position (fallback without pymupdf)
 
-Wymaga:
+Requires:
     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
     pip install docling easyocr langchain-core pymupdf
 """
@@ -36,7 +36,7 @@ from base_parser import BaseDocumentParser
 
 logger = logging.getLogger(__name__)
 
-# ── Opcjonalna zależność: PyMuPDF (do fizycznego cropowania) ──────
+# ── Optional dependency: PyMuPDF (for physical cropping) ──────
 try:
     import pymupdf
 
@@ -51,18 +51,18 @@ except ImportError:
 
 class PdfParser(BaseDocumentParser):
     """
-    Parser PDF oparty na IBM Docling z akceleracją GPU
-    i trójwarstwowym usuwaniem nagłówków/stopek.
+    PDF parser based on IBM Docling with GPU acceleration
+    and three-layer header/footer removal.
 
-    Marginesy podawane w punktach typograficznych (1 pt = 1/72 cala).
-    Standardowa strona A4: 595 × 842 pt.
+    Margins given in typographic points (1 pt = 1/72 inch).
+    Standard A4 page: 595 × 842 pt.
 
-    Typowe wartości:
-        top_margin_crop=50   — usuwa nagłówek (~1.8 cm)
-        bottom_margin_crop=60 — usuwa stopkę z numeracją (~2.1 cm)
+    Typical values:
+        top_margin_crop=50   — removes the header (~1.8 cm)
+        bottom_margin_crop=60 — removes the footer with page numbering (~2.1 cm)
     """
 
-    # Etykiety do pominięcia (warstwa semantyczna)
+    # Labels to skip (semantic layer)
     SKIP_LABELS: set = {"page_header", "page_footer"}
 
     def __init__(
@@ -79,17 +79,17 @@ class PdfParser(BaseDocumentParser):
     ):
         """
         Args:
-            use_gpu:              Czy używać GPU (auto-fallback na CPU).
-            do_ocr:               Czy uruchamiać OCR (dla skanów).
-            ocr_languages:        Języki OCR (domyślnie ["pl", "en"]).
-            table_mode:           "accurate" (GPU) lub "fast" (CPU ok).
-            num_threads:          Wątki CPU.
-            top_margin_crop:      Górny margines do obcięcia [pt].
-            bottom_margin_crop:   Dolny margines do obcięcia [pt].
-            left_margin_crop:     Lewy margines do obcięcia [pt].
-            right_margin_crop:    Prawy margines do obcięcia [pt].
+            use_gpu:              Whether to use GPU (auto-fallback to CPU).
+            do_ocr:               Whether to run OCR (for scans).
+            ocr_languages:        OCR languages (default ["pl", "en"]).
+            table_mode:           "accurate" (GPU) or "fast" (ok on CPU).
+            num_threads:          CPU threads.
+            top_margin_crop:      Top margin to crop [pt].
+            bottom_margin_crop:   Bottom margin to crop [pt].
+            left_margin_crop:     Left margin to crop [pt].
+            right_margin_crop:    Right margin to crop [pt].
         """
-        # ── Marginesy ────────────────────────────────────────────
+        # ── Margins────────────────────────────────────────────
         self._top_margin = top_margin_crop
         self._bottom_margin = bottom_margin_crop
         self._left_margin = left_margin_crop
@@ -118,7 +118,7 @@ class PdfParser(BaseDocumentParser):
             ),
         )
 
-        # ── Tabele ────────────────────────────────────────────────
+        # ── Tables────────────────────────────────────────────────
         table_structure = TableStructureOptions(
             mode=(
                 TableFormerMode.ACCURATE
@@ -141,7 +141,7 @@ class PdfParser(BaseDocumentParser):
         if do_ocr:
             pipeline_options.ocr_options = EasyOcrOptions(lang=ocr_languages)
 
-        # ── Konwerter ─────────────────────────────────────────────
+        # ── Converter─────────────────────────────────────────────
         logger.info("Ładowanie modeli Docling...")
 
         self.converter = DocumentConverter(
@@ -161,7 +161,7 @@ class PdfParser(BaseDocumentParser):
         )
 
     # ══════════════════════════════════════════════════════════════
-    # INTERFEJS PUBLICZNY
+    # PUBLIC INTERFACE
     # ══════════════════════════════════════════════════════════════
 
     def parse(
@@ -170,17 +170,17 @@ class PdfParser(BaseDocumentParser):
         **kwargs,
     ) -> List[Document]:
         """
-        Przetwarza PDF → lista Document (Markdown, 1 strona = 1 Document).
+        Processes a PDF → list of Documents (Markdown, 1 page = 1 Document).
 
         Kwargs:
-            full_document (bool): Cały dokument jako jeden Document.
-                                  Domyślnie False.
+            full_document (bool): The whole document as a single Document.
+                                  Default False.
         """
         full_document = kwargs.get("full_document", False)
         source_name = self._get_source_name(file_source)
 
         try:
-            # ── 1. PRE-CROP marginesów (PyMuPDF) ─────────────────
+            # ── 1. PRE-CROP of margins (PyMuPDF)─────────────────
             original_page_dims = None
 
             if self._margins_enabled and FITZ_AVAILABLE:
@@ -190,14 +190,14 @@ class PdfParser(BaseDocumentParser):
             else:
                 conv_source = self._prepare_source(file_source)
 
-            # ── 2. Konwersja Docling (GPU) ────────────────────────
+            # ── 2. Docling conversion (GPU)────────────────────────
             logger.info(f"Konwersja Docling: {source_name}")
             result = self.converter.convert(conv_source)
             doc = result.document
             logger.info(f"Konwersja zakończona: {source_name}")
 
-            # ── 3. Budowanie dokumentów ───────────────────────────
-            # Post-filtr bbox tylko gdy pymupdf niedostępny a marginesy włączone
+            # ── 3. Building the documents───────────────────────────
+            # Bbox post-filter only when pymupdf is unavailable and margins are enabled
             use_postfilter = self._margins_enabled and not FITZ_AVAILABLE
 
             if full_document:
@@ -209,7 +209,7 @@ class PdfParser(BaseDocumentParser):
                     postfilter_margins=use_postfilter,
                 )
 
-            # ── 4. Uzupełnienie metadanych o oryginalne wymiary ──
+            # ── 4. Enriching the metadata with the original dimensions──
             if original_page_dims:
                 for d in documents:
                     page_no = d.metadata.get("page_number", 1)
@@ -232,7 +232,7 @@ class PdfParser(BaseDocumentParser):
             return []
 
     def diagnostics(self) -> Dict[str, str]:
-        """Informacje diagnostyczne."""
+        """Diagnostic information."""
 
 
         info = {
@@ -258,17 +258,17 @@ class PdfParser(BaseDocumentParser):
         return info
 
     # ══════════════════════════════════════════════════════════════
-    # WARSTWA 1: PRE-CROP (PyMuPDF cropbox)
+    # LAYER 1: PRE-CROP (PyMuPDF cropbox)
     # ══════════════════════════════════════════════════════════════
 
     def _precrop_pdf(
         self, file_source: Union[str, io.BytesIO, bytes]
     ) -> Tuple[io.BytesIO, Dict[int, Tuple[float, float]]]:
         """
-        Fizyczne przycięcie marginesów za pomocą PyMuPDF cropbox.
+        Physical cropping of the margins using PyMuPDF cropbox.
 
-        Docling NIGDY nie zobaczy treści w marginesach — nie przetworzy
-        ich, nie zmarnuje na nie compute GPU.
+        Docling will NEVER see the content in the margins — it will not
+        process it, wasting no GPU compute on it.
 
         Returns:
             (cropped_pdf_stream, original_page_dimensions)
@@ -288,18 +288,18 @@ class PdfParser(BaseDocumentParser):
         pages_cropped = 0
 
         for page_idx, page in enumerate(pdf_doc):
-            rect = page.rect  # Oryginalne wymiary (x0, y0, x1, y1)
+            rect = page.rect  # Original dimensions (x0, y0, x1, y1)
 
-            # Zapisz oryginalne wymiary
+            # Save the original dimensions
             original_dims[page_idx + 1] = (rect.width, rect.height)
 
-            # Oblicz nowy cropbox z walidacją
+            # Compute the new cropbox with validation
             new_x0 = rect.x0 + self._left_margin
             new_y0 = rect.y0 + self._top_margin
             new_x1 = rect.x1 - self._right_margin
             new_y1 = rect.y1 - self._bottom_margin
 
-            # Walidacja: sprawdź czy po obcięciu zostaje sensowna powierzchnia
+            # Validation: check that a sensible area remains after cropping
             remaining_width = new_x1 - new_x0
             remaining_height = new_y1 - new_y0
 
@@ -321,7 +321,7 @@ class PdfParser(BaseDocumentParser):
             f"left={self._left_margin}pt, right={self._right_margin}pt)"
         )
 
-        # Zapisz przycięty PDF do pamięci
+        # Save the cropped PDF to memory
         output = io.BytesIO()
         pdf_doc.save(output)
         pdf_doc.close()
@@ -330,20 +330,20 @@ class PdfParser(BaseDocumentParser):
         return output, original_dims
 
     # ══════════════════════════════════════════════════════════════
-    # WARSTWA 3: POST-FILTER (provenance bounding box)
-    # Fallback gdy PyMuPDF niedostępny
+    # LAYER 3: POST-FILTER (provenance bounding box)
+    # Fallback when PyMuPDF is unavailable
     # ══════════════════════════════════════════════════════════════
 
     def _is_in_margin(
         self, item, page_height: float, page_width: float
     ) -> bool:
         """
-        Sprawdza czy element znajduje się w strefie marginesu
-        na podstawie jego bounding box z provenance.
+        Checks whether the element lies in the margin zone
+        based on its provenance bounding box.
 
-        Obsługuje oba systemy współrzędnych Docling:
-        - TOPLEFT:    (0,0) w lewym górnym rogu
-        - BOTTOMLEFT: (0,0) w lewym dolnym rogu
+        Supports both Docling coordinate systems:
+        - TOPLEFT:    (0,0) in the top-left corner
+        - BOTTOMLEFT: (0,0) in the bottom-left corner
         """
         if not hasattr(item, "prov") or not item.prov:
             return False
@@ -351,7 +351,7 @@ class PdfParser(BaseDocumentParser):
         try:
             bbox = item.prov[0].bbox
 
-            # Odczytaj system współrzędnych
+            # Read the coordinate system
             coord_origin = getattr(bbox, "coord_origin", None)
             origin_value = (
                 coord_origin.value
@@ -361,23 +361,23 @@ class PdfParser(BaseDocumentParser):
             is_topleft = origin_value in ("TOPLEFT", "topleft", None)
 
             if is_topleft:
-                # TOPLEFT: t mały = góra strony, b duży = dół strony
-                #   bbox.t = odległość od góry do górnej krawędzi elementu
-                #   bbox.b = odległość od góry do dolnej krawędzi elementu
+                # TOPLEFT: small t = top of the page, large b = bottom of the page
+                #   bbox.t = distance from the top to the element's top edge
+                #   bbox.b = distance from the top to the element's bottom edge
                 if self._top_margin > 0 and bbox.b <= self._top_margin:
-                    return True  # Cały element w górnym marginesie
+                    return True  # The whole element is in the top margin
                 if self._bottom_margin > 0 and bbox.t >= page_height - self._bottom_margin:
-                    return True  # Cały element w dolnym marginesie
+                    return True  # The whole element is in the bottom margin
                 if self._left_margin > 0 and bbox.r <= self._left_margin:
                     return True
                 if self._right_margin > 0 and bbox.l >= page_width - self._right_margin:
                     return True
             else:
-                # BOTTOMLEFT: b mały = dół strony, t duży = góra strony
+                # BOTTOMLEFT: small b = bottom of the page, large t = top of the page
                 if self._bottom_margin > 0 and bbox.t <= self._bottom_margin:
-                    return True  # Element w dolnym marginesie
+                    return True  # Element in the bottom margin
                 if self._top_margin > 0 and bbox.b >= page_height - self._top_margin:
-                    return True  # Element w górnym marginesie
+                    return True  # Element in the top margin
                 if self._left_margin > 0 and bbox.r <= self._left_margin:
                     return True
                 if self._right_margin > 0 and bbox.l >= page_width - self._right_margin:
@@ -391,7 +391,7 @@ class PdfParser(BaseDocumentParser):
 
     def _get_page_dimensions(self, doc) -> Dict[int, Tuple[float, float]]:
         """
-        Pobiera wymiary stron z dokumentu Docling.
+        Gets the page dimensions from the Docling document.
 
         Returns:
             {page_no: (width, height)}
@@ -406,7 +406,7 @@ class PdfParser(BaseDocumentParser):
         return dims
 
     # ══════════════════════════════════════════════════════════════
-    # BUDOWANIE DOKUMENTÓW
+    # BUILDING THE DOCUMENTS
     # ══════════════════════════════════════════════════════════════
 
     def _build_page_documents(
@@ -416,16 +416,16 @@ class PdfParser(BaseDocumentParser):
         postfilter_margins: bool = False,
     ) -> List[Document]:
         """
-        Buduje listę Document z podziałem na strony.
+        Builds a list of Documents split by page.
 
-        Trójwarstwowe filtrowanie:
-        1. SKIP_LABELS (semantyczne — page_header / page_footer)
-        2. Pre-crop (jeśli zastosowany wcześniej — elementy już usunięte)
-        3. Post-filter bbox (jeśli postfilter_margins=True)
+        Three-layer filtering:
+        1. SKIP_LABELS (semantic — page_header / page_footer)
+        2. Pre-crop (if applied earlier — the elements are already removed)
+        3. Bbox post-filter (if postfilter_margins=True)
         """
         page_contents: Dict[int, List[str]] = defaultdict(list)
 
-        # Wymiary stron (do post-filtra)
+        # Page dimensions (for the post-filter)
         page_dims = self._get_page_dimensions(doc) if postfilter_margins else {}
 
         skipped_semantic = 0
@@ -437,27 +437,27 @@ class PdfParser(BaseDocumentParser):
             label = getattr(item, "label", None)
             label_value = label.value if hasattr(label, "value") else str(label)
 
-            # ── Warstwa 2: Filtr semantyczny (SKIP_LABELS) ───────
+            # ── Layer 2: Semantic filter (SKIP_LABELS)───────
             if label_value in self.SKIP_LABELS:
                 skipped_semantic += 1
                 continue
 
-            # Numer strony
+            # Page number
             page_no = self._get_page_number(item)
 
-            # ── Warstwa 3: Post-filtr marginesów (bbox) ──────────
+            # ── Layer 3: Margin post-filter (bbox)──────────
             if postfilter_margins and page_no in page_dims:
                 pw, ph = page_dims[page_no]
                 if self._is_in_margin(item, page_height=ph, page_width=pw):
                     skipped_margin += 1
                     continue
 
-            # Konwersja na Markdown
+            # Convert to Markdown
             md_fragment = self._item_to_markdown(item, level)
             if md_fragment:
                 page_contents[page_no].append(md_fragment)
 
-        # Logowanie statystyk filtrowania
+        # Logging the filtering statistics
         if skipped_semantic or skipped_margin:
             logger.info(
                 f"Filtrowanie '{source_name}': "
@@ -466,7 +466,7 @@ class PdfParser(BaseDocumentParser):
                 f"{skipped_margin} marginesem"
             )
 
-        # ── Fallbacki ─────────────────────────────────────────────
+        # ── Fallbacks─────────────────────────────────────────────
         if not page_contents:
             logger.warning(f"Brak elementów w '{source_name}' → fallback export_to_markdown()")
             return self._build_full_document(doc, source_name)
@@ -475,7 +475,7 @@ class PdfParser(BaseDocumentParser):
             logger.warning(f"Brak provenance stron w '{source_name}' → jeden Document")
             return self._build_full_document(doc, source_name)
 
-        # ── Budowanie obiektów Document ───────────────────────────
+        # ── Building the Document objects───────────────────────────
         documents = []
         total_pages = max(page_contents.keys()) if page_contents else 0
 
@@ -502,7 +502,7 @@ class PdfParser(BaseDocumentParser):
         return documents
 
     def _build_full_document(self, doc, source_name: str) -> List[Document]:
-        """Cały dokument jako jeden Document (natywny export Docling)."""
+        """The whole document as a single Document (native Docling export)."""
         try:
             full_md = doc.export_to_markdown().strip()
         except Exception as e:
@@ -528,7 +528,7 @@ class PdfParser(BaseDocumentParser):
         ]
 
     # ══════════════════════════════════════════════════════════════
-    # METODY POMOCNICZE
+    # HELPER METHODS
     # ══════════════════════════════════════════════════════════════
 
     @staticmethod
