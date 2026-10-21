@@ -5,9 +5,9 @@ import asyncio
 import concurrent.futures
 from typing import List, Union
 
-import fitz  # PyMuPDF – margin trimming and page analysis
+import pymupdf  # PyMuPDF – margin trimming and page analysis
 from langchain_core.documents import Document
-from kreuzberg import extract_bytes
+from kreuzberg import extract_bytes, ExtractionConfig, OcrConfig
 
 from base_parser import BaseDocumentParser
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class PdfParser(BaseDocumentParser):
     """
-    PDF parser (Kreuzberg + PyMuPDF), adapted for contracts (mixed PDFs:
+    PDF parser (Kreuzberg v4 + PyMuPDF), adapted for contracts (mixed PDFs:
     text pages + scans of signatures, annexes, attachments).
 
     Steps:
@@ -35,6 +35,7 @@ class PdfParser(BaseDocumentParser):
     # Minimum content height that must remain after removing the margins
     MIN_CONTENT_HEIGHT = 50
 
+    # Tesseract language code(s), e.g. "pol", "pol+eng"
     DEFAULT_LANGUAGE = "pol"
 
     # ------------------------------------------------------------------
@@ -123,10 +124,10 @@ class PdfParser(BaseDocumentParser):
     # ------------------------------------------------------------------
 
     def _extract_single_page(
-        self, pdf_doc: fitz.Document, page_index: int, force_ocr: bool, **kwargs
+        self, pdf_doc: pymupdf.Document, page_index: int, force_ocr: bool, **kwargs
     ) -> str:
         """Cuts a single page into a separate PDF and runs it through Kreuzberg."""
-        single = fitz.open()
+        single = pymupdf.open()
         try:
             single.insert_pdf(pdf_doc, from_page=page_index, to_page=page_index)
             page_bytes = single.tobytes()
@@ -135,8 +136,7 @@ class PdfParser(BaseDocumentParser):
 
         page_kwargs = dict(kwargs)
         page_kwargs.setdefault("language", self.DEFAULT_LANGUAGE)
-        if force_ocr:
-            page_kwargs["force_ocr"] = True
+        page_kwargs["force_ocr"] = force_ocr
 
         result = self._run_extraction(page_bytes, **page_kwargs)
         return (result.content or "").strip()
@@ -146,21 +146,21 @@ class PdfParser(BaseDocumentParser):
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _open_pdf(file_source: Union[str, io.BytesIO, bytes]) -> fitz.Document:
+    def _open_pdf(file_source: Union[str, io.BytesIO, bytes]) -> pymupdf.Document:
         """Opens a PDF file from disk or memory."""
         if isinstance(file_source, str):
-            return fitz.Document(file_source)
+            return pymupdf.Document(file_source)
         if isinstance(file_source, bytes):
-            return fitz.Document(stream=file_source, filetype="pdf")
+            return pymupdf.Document(stream=file_source, filetype="pdf")
         if isinstance(file_source, io.BytesIO):
-            return fitz.Document(stream=file_source.read(), filetype="pdf")
+            return pymupdf.Document(stream=file_source.read(), filetype="pdf")
         raise ValueError("Unsupported PDF source type")
 
     # ------------------------------------------------------------------
     # Removing headers / footers (redaction instead of CropBox)
     # ------------------------------------------------------------------
 
-    def _crop_margins(self, pdf_doc: fitz.Document) -> None:
+    def _crop_margins(self, pdf_doc: pymupdf.Document) -> None:
         """
         Removes the content of the top and bottom margins on every page.
         Unlike set_cropbox, it behaves the same for any extraction engine
@@ -173,14 +173,14 @@ class PdfParser(BaseDocumentParser):
             if r.height <= self.TOP_MARGIN_TO_CROP + self.BOTTOM_MARGIN_TO_CROP + self.MIN_CONTENT_HEIGHT:
                 continue
 
-            top = fitz.Rect(r.x0, r.y0, r.x1, r.y0 + self.TOP_MARGIN_TO_CROP)
-            bottom = fitz.Rect(r.x0, r.y1 - self.BOTTOM_MARGIN_TO_CROP, r.x1, r.y1)
+            top = pymupdf.Rect(r.x0, r.y0, r.x1, r.y0 + self.TOP_MARGIN_TO_CROP)
+            bottom = pymupdf.Rect(r.x0, r.y1 - self.BOTTOM_MARGIN_TO_CROP, r.x1, r.y1)
 
             page.add_redact_annot(top)
             page.add_redact_annot(bottom)
             page.apply_redactions(
-                images=fitz.PDF_REDACT_IMAGE_PIXELS,
-                graphics=fitz.PDF_REDACT_LINE_ART_NONE,
+                images=pymupdf.PDF_REDACT_IMAGE_PIXELS,
+                graphics=pymupdf.PDF_REDACT_LINE_ART_NONE,
             )
 
     # ------------------------------------------------------------------
@@ -206,15 +206,20 @@ class PdfParser(BaseDocumentParser):
     @staticmethod
     async def _async_extract(pdf_bytes: bytes, **kwargs):
         """
-        Asynchronous content extraction from a PDF (bytes).
+        Asynchronous content extraction from a PDF (bytes) using the
+        Kreuzberg v4 ExtractionConfig API.
         Supported kwargs: force_ocr (bool), language (str, e.g. 'pol').
         """
-        extra = {}
-        if kwargs.get("force_ocr"):
-            extra["force_ocr"] = True
-        if kwargs.get("language"):
-            extra["language"] = kwargs["language"]
+        config = ExtractionConfig(
+            force_ocr=bool(kwargs.get("force_ocr", False)),
+            ocr=OcrConfig(
+                backend="tesseract",
+                language=kwargs.get("language", "pol"),
+            ),
+        )
 
         return await extract_bytes(
-            pdf_bytes, mime_type="application/pdf", **extra
+            pdf_bytes,
+            mime_type="application/pdf",
+            config=config,
         )
