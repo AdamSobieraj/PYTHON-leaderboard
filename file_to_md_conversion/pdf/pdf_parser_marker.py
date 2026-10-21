@@ -12,7 +12,7 @@ from base_parser import BaseDocumentParser
 logger = logging.getLogger(__name__)
 
 try:
-    import fitz  # PyMuPDF
+    import pymupdf  # PyMuPDF
     FITZ_AVAILABLE = True
 except ImportError:
     FITZ_AVAILABLE = False
@@ -184,12 +184,12 @@ class PdfParser(BaseDocumentParser):
         Modele Surya w ogóle nie zobaczą obciętych obszarów.
         """
         if isinstance(file_source, str):
-            pdf_doc = fitz.Document(file_source)
+            pdf_doc = pymupdf.Document(file_source)
         elif isinstance(file_source, bytes):
-            pdf_doc = fitz.Document(stream=file_source, filetype="pdf")
+            pdf_doc = pymupdf.Document(stream=file_source, filetype="pdf")
         elif isinstance(file_source, io.BytesIO):
             file_source.seek(0)
-            pdf_doc = fitz.Document(stream=file_source.read(), filetype="pdf")
+            pdf_doc = pymupdf.Document(stream=file_source.read(), filetype="pdf")
         else:
             raise ValueError(f"Nieobsługiwany typ: {type(file_source)}")
 
@@ -216,7 +216,7 @@ class PdfParser(BaseDocumentParser):
                 )
                 continue
 
-            new_rect = fitz.Rect(new_x0, new_y0, new_x1, new_y1)
+            new_rect = pymupdf.Rect(new_x0, new_y0, new_x1, new_y1)
             page.set_cropbox(new_rect)
             pages_cropped += 1
 
