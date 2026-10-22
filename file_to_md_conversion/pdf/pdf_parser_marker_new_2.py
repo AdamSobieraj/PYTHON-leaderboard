@@ -99,6 +99,11 @@ MIN_OCR_LETTER_RATIO = 0.4        # letters / non-space characters
 INCLUDE_NON_TEXT_PAGES = True     # keep them as a short placeholder Document
 NON_TEXT_PLACEHOLDER = "[Strona bez tekstu: rysunek, plan lub obraz]"
 
+# --- Markdown post-processing ---
+# Removes the duplicated list prefix added by Marker ("1. 2. Text" -> "2. Text").
+# Set to False to keep Marker's output untouched.
+FIX_LIST_NUMBERING = True
+
 # --- Images / figures detected by Marker ---
 # Pictures and figures that Marker extracts are saved to
 #   <IMAGES_DIR>/<document name>_<hash>/<marker file name>
@@ -270,7 +275,8 @@ class PdfParser(BaseDocumentParser):
                 rendered = self.converter(temp_pdf_path)
             md_text = (rendered.markdown or "").strip()
             # FIX (list numbering): remove the duplicated list prefix added by Marker
-            md_text = self._fix_list_numbering(md_text)
+            if FIX_LIST_NUMBERING:
+                md_text = self._fix_list_numbering(md_text)
             # Pictures/figures detected by Marker -> files in images_dir.
             # The Markdown still holds the raw "![](...)" references at this
             # point; they are replaced later, when the documents are built
