@@ -14,9 +14,10 @@ import tempfile
 import threading
 from collections import Counter
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import pymupdf  # PyMuPDF
+from PIL import Image
 import torch
 from langchain_core.documents import Document
 from marker.config.parser import ConfigParser
@@ -74,6 +75,18 @@ OCR_TEXT_LABEL = "[Tekst rozpoznany z obrazu]"
 PIC_OCR_MIN_LETTERS = 6
 PIC_OCR_LETTER_RATIO = 0.3
 
+# --- Placeholder pages where Marker detected no picture ---
+# A scanned fragment that Marker treats as a scan (not a Picture/Figure)
+# leaves no image behind, and when its OCR comes back as noise the page
+# would become a bare placeholder with nothing saved. For such pages the
+# page is rendered with PyMuPDF and cropped to its ink region: the second
+# OCR pass is run on the crop (the text fills the frame, so it reads much
+# better) and the crop is saved to the images folder, so the drawing/plan
+# is not lost.
+OCR_PLACEHOLDER_PAGES = True          # second OCR pass on the ink crop
+SAVE_PLACEHOLDER_PAGE_IMAGES = True   # save the ink crop as a PNG
+PLACEHOLDER_PAGE_DPI = 150            # render resolution of the page
+
 
 @dataclass
 class PageInfo:
@@ -97,7 +110,10 @@ class PdfParser(BaseDocumentParser):
     3. Build one Document per page:
        - text    -> Marker output (fallback: PyMuPDF text layer),
        - scan    -> Marker OCR output, noise-filtered,
-       - drawing -> placeholder (plan / image without text),
+       - drawing -> placeholder (plan / image without text); as a last
+                    resort the page is rendered and cropped to ink, the
+                    second OCR pass is tried on the crop, and the crop is
+                    saved to the images folder so the drawing is not lost,
        - blank   -> skipped; blank pages also mark a boundary between documents
                     (metadata["section_index"]).
     """
@@ -120,9 +136,10 @@ class PdfParser(BaseDocumentParser):
     _MD_IMAGE_REF_RE = re.compile(r"!\[[^\]]*\]\(([^)]*)\)")
 
     # A lettered sub-list item that Marker renumbered: an ordered-list marker
-    # ("1.") directly followed by the original letter marker ("a.") plus a space,
-    # e.g. "1. a. txt". Group 1 = leading indent, group 2 = the letter.
-    _LIST_DOUBLE_MARKER_RE = re.compile(r"^(\s*)\d+\.\s+([a-z])\.(?=\s)", re.MULTILINE)
+    # ("1.") directly followed by the original letter marker ("a." or "a)")
+    # plus a space, e.g. "1. a. txt" or "1. a) txt". Group 1 = leading indent,
+    # group 2 = the letter, group 3 = the original delimiter ("." or ")").
+    _LIST_DOUBLE_MARKER_RE = re.compile(r"^(\s*)\d+\.\s+([a-z])([.)])(?=\s)", re.MULTILINE)
 
     def __init__(self, languages: str = "pl,en", images_dir: str = IMAGES_DIR):
         """
@@ -237,7 +254,8 @@ class PdfParser(BaseDocumentParser):
                         f"{len(pages_info)} pages ({source_name}) - page numbers may be misaligned."
                     )
                 documents = self._build_documents(
-                    marker_pages, pages_info, source_name, image_map
+                    marker_pages, pages_info, source_name, image_map,
+                    pdf_doc=pdf_doc, pdf_bytes=pdf_bytes,
                 )
 
             if not documents:
@@ -290,6 +308,14 @@ class PdfParser(BaseDocumentParser):
         """Marker text that replaces an image reference in the Markdown."""
         return IMAGE_MARKER_TEMPLATE.format(path=path, name=os.path.basename(path))
 
+    def _images_folder(self, source_name: str, pdf_bytes: bytes) -> str:
+        """Per-document images folder <images_dir>/<stem>_<hash8>, created."""
+        stem = re.sub(r"[^\w.-]+", "_", os.path.splitext(source_name)[0]).strip("._") or "document"
+        folder = f"{stem}_{hashlib.sha1(pdf_bytes).hexdigest()[:8]}"
+        target_dir = os.path.join(self.images_dir, folder)
+        os.makedirs(target_dir, exist_ok=True)
+        return target_dir
+
     def _save_images(
         self,
         images: Optional[Dict[str, object]],
@@ -303,10 +329,7 @@ class PdfParser(BaseDocumentParser):
         if not SAVE_IMAGES or not images:
             return {}
 
-        stem = re.sub(r"[^\w.-]+", "_", os.path.splitext(source_name)[0]).strip("._") or "document"
-        folder = f"{stem}_{hashlib.sha1(pdf_bytes).hexdigest()[:8]}"
-        target_dir = os.path.join(self.images_dir, folder)
-        os.makedirs(target_dir, exist_ok=True)
+        target_dir = self._images_folder(source_name, pdf_bytes)
 
         image_map: Dict[str, str] = {}
         skipped = 0
@@ -458,6 +481,63 @@ class PdfParser(BaseDocumentParser):
 
         return self._MD_IMAGE_REF_RE.sub(_replace, md_text)
 
+    def _recover_placeholder_page(
+        self,
+        pdf_doc: Optional["pymupdf.Document"],
+        info: PageInfo,
+        source_name: str,
+        pdf_bytes: Optional[bytes],
+    ) -> Tuple[str, Optional[str]]:
+        """
+        Last resort for a page that is about to become a non-text placeholder
+        but on which Marker detected no picture: a scanned fragment (e.g. a
+        quarter page, slightly skewed) that Marker treated as a scan and whose
+        OCR came back as noise. Renders the page with PyMuPDF and crops it to
+        ink. Returns (ocr_text, saved_image_path): the second OCR pass is
+        tried on the crop (the text fills the frame, so it reads much better)
+        and the crop is saved to the images folder, so the drawing/plan is not
+        lost.
+        """
+        if pdf_doc is None or pdf_bytes is None:
+            return "", None
+        try:
+            mat = pymupdf.Matrix(PLACEHOLDER_PAGE_DPI / 72, PLACEHOLDER_PAGE_DPI / 72)
+            pix = pdf_doc[info.number - 1].get_pixmap(matrix=mat, alpha=False)
+            image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            image = self._crop_to_ink(image)
+        except Exception as e:
+            logger.warning(f"[p{info.number}] page render failed ({source_name}): {e}")
+            return "", None
+
+        ocr_text = self._ocr_picture(image) if OCR_PLACEHOLDER_PAGES else ""
+        if ocr_text:
+            logger.info(
+                f"[p{info.number}] recovered {len(ocr_text)} chars via cropped page OCR ({source_name})"
+            )
+        rel_path = self._save_rendered_image(
+            image, source_name, pdf_bytes, f"page_{info.number:03d}.png"
+        )
+        return ocr_text, rel_path
+
+    def _save_rendered_image(
+        self, image, source_name: str, pdf_bytes: bytes, file_name: str
+    ) -> Optional[str]:
+        """
+        Saves a rendered (ink-cropped) page to the per-document images folder.
+        Returns the relative path with forward slashes, or None.
+        """
+        if not SAVE_PLACEHOLDER_PAGE_IMAGES:
+            return None
+        try:
+            target_dir = self._images_folder(source_name, pdf_bytes)
+            image.save(os.path.join(target_dir, file_name))
+            return (
+                f"{self.images_dir}/{os.path.basename(target_dir)}/{file_name}"
+            ).replace(os.sep, "/")
+        except Exception as e:
+            logger.warning(f"Could not save rendered page '{file_name}' ({source_name}): {e}")
+            return None
+
     # ══════════════════════════════════════════════════════════════
     # PAGE ANALYSIS (classification + section boundaries)
     # ══════════════════════════════════════════════════════════════
@@ -569,10 +649,10 @@ class PdfParser(BaseDocumentParser):
     def _collapse_list_numbers(self, text: str) -> str:
         """
         Removes the redundant outer numbering Marker adds in front of lettered
-        sub-list items ("1. a. txt" -> "a. txt"), so the document's original
-        a/b/c lettering is what remains.
+        sub-list items ("1. a. txt" -> "a. txt", "1. a) txt" -> "a) txt"), so
+        the document's original a/b/c lettering is what remains.
         """
-        return self._LIST_DOUBLE_MARKER_RE.sub(r"\1\2.", text)
+        return self._LIST_DOUBLE_MARKER_RE.sub(r"\1\2\3", text)
 
     def _build_documents(
         self,
@@ -580,6 +660,8 @@ class PdfParser(BaseDocumentParser):
         pages_info: List[PageInfo],
         source_name: str,
         image_map: Optional[Dict[str, str]] = None,
+        pdf_doc: Optional["pymupdf.Document"] = None,
+        pdf_bytes: Optional[bytes] = None,
     ) -> List[Document]:
         """Combines Marker output with the page analysis into one Document per page."""
         documents: List[Document] = []
@@ -596,6 +678,9 @@ class PdfParser(BaseDocumentParser):
             raw_marker_text = text  # still contains the "![](...)" references
             page_type = info.kind
             method = "marker"
+            # Images Marker detected on this page (computed early: the
+            # placeholder recovery below may add its saved page render)
+            page_image_paths = self._image_paths(raw_marker_text, image_map)
 
             if info.kind == "text":
                 visible = self._MD_IMAGE_RE.sub("", text).strip()
@@ -631,14 +716,25 @@ class PdfParser(BaseDocumentParser):
                     f"[p{info.number}] placeholder: kind={info.kind} "
                     f"plain={len(info.plain_text)} discarded={text[:200]!r}"
                 )
-                non_text_pages.append(info.number)
-                if not INCLUDE_NON_TEXT_PAGES:
-                    continue
-                text = NON_TEXT_PLACEHOLDER
-                method = "placeholder"
+                # Marker treated the page as a scan, its OCR came back as
+                # noise, and no picture block was detected - the drawing/plan
+                # would be lost entirely. Render the page and crop it to ink:
+                # try the second OCR pass on the crop and save the crop.
+                fallback_text, rel_path = self._recover_placeholder_page(
+                    pdf_doc, info, source_name, pdf_bytes
+                )
+                if rel_path:
+                    page_image_paths.append(rel_path)
+                if fallback_text:
+                    text = f"{OCR_TEXT_LABEL}\n{fallback_text}"
+                    method = "marker-page-ocr"
+                else:
+                    non_text_pages.append(info.number)
+                    if not INCLUDE_NON_TEXT_PAGES:
+                        continue
+                    text = NON_TEXT_PLACEHOLDER
+                    method = "placeholder"
 
-            # Images Marker detected on this page
-            page_image_paths = self._image_paths(raw_marker_text, image_map)
             if method == "marker":
                 text = self._apply_images(text, image_map)
             elif page_image_paths:
