@@ -13,6 +13,8 @@ Header/footer removal (controlled by REMOVE_HEADERS_FOOTERS):
                     and HEADER_FOOTER_MODE == "fixed"
 
 Table handling: native Docling export (TableFormer) -> markdown.
+Table of contents (Docling label "document_index") is a TableItem and is
+exported the same way as tables.
 Image handling (e.g. plans, layouts): optional export to PNG files + link in
 the markdown (images_output_dir parameter).
 
@@ -65,6 +67,12 @@ try:
     from docling_core.types.doc import ContentLayer
 except ImportError:
     ContentLayer = None
+
+# ── TableItem: detect tables by type (covers the "document_index" label) ──
+try:
+    from docling_core.types.doc import TableItem
+except ImportError:
+    TableItem = None
 
 # ======================================================================
 # SETTINGS
@@ -689,6 +697,12 @@ class PdfParser(BaseDocumentParser):
             label = getattr(item, "label", None)
             label_value = label.value if hasattr(label, "value") else str(label)
 
+            # Diagnostic log (switch to debug / remove once verified)
+            logger.info(
+                f"item p{self._get_page_number(item)} "
+                f"label={label_value} type={type(item).__name__}"
+            )
+
             # ── Semantic filter (page_header / page_footer) ──────
             if REMOVE_HEADERS_FOOTERS and label_value in self.SKIP_LABELS:
                 skipped_semantic += 1
@@ -900,6 +914,14 @@ class PdfParser(BaseDocumentParser):
         label = getattr(item, "label", None)
         label_value = label.value if hasattr(label, "value") else str(label)
 
+        # Tables AND table of contents (label "document_index" is a TableItem)
+        is_table = (
+            (TableItem is not None and isinstance(item, TableItem))
+            or label_value in ("table", "document_index")
+        )
+        if is_table:
+            return self._table_to_markdown(item, doc)
+
         if label_value == "section_header":
             text = getattr(item, "text", "")
             if not text:
@@ -910,9 +932,6 @@ class PdfParser(BaseDocumentParser):
         if label_value == "title":
             text = getattr(item, "text", "")
             return f"# {text}" if text else None
-
-        if label_value == "table":
-            return self._table_to_markdown(item, doc)
 
         if label_value == "picture":
             return self._picture_to_markdown(
@@ -943,6 +962,19 @@ class PdfParser(BaseDocumentParser):
         if text and text.strip():
             return text.strip()
 
+        # Items without a text field (e.g. unknown floating items): native export
+        if hasattr(item, "export_to_markdown"):
+            try:
+                md = item.export_to_markdown(doc)
+                if md and md.strip():
+                    return md.strip()
+            except Exception:
+                pass
+
+        logger.debug(
+            f"Dropped item: label={label_value}, page={page_no}, "
+            f"type={type(item).__name__}"
+        )
         return None
 
     def _table_to_markdown(self, item, doc) -> Optional[str]:
