@@ -376,6 +376,67 @@ class PdfParser(BaseDocumentParser):
         return cls._LIST_PREFIX_DUP_RE.sub(r"\1\2", text)
 
     # ══════════════════════════════════════════════════════════════
+    # IMAGES (pictures / figures detected by Marker)
+    # ══════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _image_marker(path: str) -> str:
+        """Marker text that replaces an image reference in the Markdown."""
+        return IMAGE_MARKER_TEMPLATE.format(path=path, name=os.path.basename(path))
+
+    def _save_images(
+        self,
+        images: Optional[Dict[str, object]],
+        source_name: str,
+        pdf_bytes: bytes,
+    ) -> Dict[str, str]:
+        """
+        Saves Marker's images (PIL) to <images_dir>/<document>_<hash>/.
+        Returns {marker file name: relative path with forward slashes}.
+        """
+        if not SAVE_IMAGES or not images:
+            return {}
+
+        stem = re.sub(r"[^\w.-]+", "_", os.path.splitext(source_name)[0]).strip("._") or "document"
+        folder = f"{stem}_{hashlib.sha1(pdf_bytes).hexdigest()[:8]}"
+        target_dir = os.path.join(self.images_dir, folder)
+        os.makedirs(target_dir, exist_ok=True)
+
+        image_map: Dict[str, str] = {}
+        for name, image in images.items():
+            safe_name = os.path.basename(name)
+            file_path = os.path.join(target_dir, safe_name)
+            try:
+                # JPEG cannot store alpha / palette modes
+                if safe_name.lower().endswith((".jpg", ".jpeg")) and image.mode != "RGB":
+                    image = image.convert("RGB")
+                image.save(file_path)
+            except Exception as e:
+                logger.warning(f"Could not save image '{name}' ({source_name}): {e}")
+                continue
+            image_map[name] = f"{self.images_dir}/{folder}/{safe_name}".replace(os.sep, "/")
+
+        logger.info(f"Saved {len(image_map)}/{len(images)} images to '{target_dir}' ({source_name})")
+        return image_map
+
+    def _apply_images(self, text: str, image_map: Optional[Dict[str, str]]) -> str:
+        """Replaces Marker's '![](file)' references with image markers."""
+        if not text or not image_map:
+            return text
+
+        def _replace(match: "re.Match") -> str:
+            path = image_map.get(match.group(1))
+            return self._image_marker(path) if path else match.group(0)
+
+        return self._MD_IMAGE_REF_RE.sub(_replace, text)
+
+    def _image_paths(self, text: str, image_map: Optional[Dict[str, str]]) -> List[str]:
+        """Saved image paths referenced in the given Marker text."""
+        if not text or not image_map:
+            return []
+        return [image_map[n] for n in self._MD_IMAGE_REF_RE.findall(text) if n in image_map]
+
+    # ══════════════════════════════════════════════════════════════
     # PAGE ANALYSIS (classification + section boundaries)
     # ══════════════════════════════════════════════════════════════
 
@@ -488,6 +549,7 @@ class PdfParser(BaseDocumentParser):
         marker_pages: Dict[int, str],
         pages_info: List[PageInfo],
         source_name: str,
+        image_map: Optional[Dict[str, str]] = None,
     ) -> List[Document]:
         """Combines Marker output with the page analysis into one Document per page."""
         documents: List[Document] = []
@@ -501,6 +563,7 @@ class PdfParser(BaseDocumentParser):
                 continue
 
             text = marker_pages.get(info.number, "")
+            raw_marker_text = text  # still contains the "![](...)" references
             page_type = info.kind
             method = "marker"
 
@@ -544,6 +607,15 @@ class PdfParser(BaseDocumentParser):
                 text = NON_TEXT_PLACEHOLDER
                 method = "placeholder"
 
+            # Images Marker detected on this page
+            page_image_paths = self._image_paths(raw_marker_text, image_map)
+            if method == "marker":
+                text = self._apply_images(text, image_map)
+            elif page_image_paths:
+                # Text came from PyMuPDF or is the placeholder: the Marker text
+                # with the references was not used, so append the markers
+                text = text + "\n\n" + "\n".join(self._image_marker(p) for p in page_image_paths)
+
             metadata = self._base_metadata(source_name)
             metadata.update(
                 {
@@ -553,6 +625,9 @@ class PdfParser(BaseDocumentParser):
                     "extraction_method": method,
                 }
             )
+            if page_image_paths:
+                metadata["image_count"] = len(page_image_paths)
+                metadata["image_paths"] = ";".join(page_image_paths)
             documents.append(Document(page_content=text, metadata=metadata))
 
         if blank_pages:
@@ -564,20 +639,36 @@ class PdfParser(BaseDocumentParser):
 
         return documents
 
-    def _build_documents_unclassified(self, md_text: str, source_name: str) -> List[Document]:
+    def _build_documents_unclassified(
+        self,
+        md_text: str,
+        source_name: str,
+        image_map: Optional[Dict[str, str]] = None,
+    ) -> List[Document]:
         """Fallback without PyMuPDF: only Marker's pagination (no page analysis)."""
         if not md_text:
             return []
 
         marker_pages = self._split_marker_pages(md_text)
         if marker_pages is None:
-            return [Document(page_content=md_text, metadata=self._base_metadata(source_name))]
+            return [
+                Document(
+                    page_content=self._apply_images(md_text, image_map),
+                    metadata=self._base_metadata(source_name),
+                )
+            ]
 
         documents = []
         for number, text in sorted(marker_pages.items()):
+            page_image_paths = self._image_paths(text, image_map)
             metadata = self._base_metadata(source_name)
             metadata["page_number"] = number
-            documents.append(Document(page_content=text, metadata=metadata))
+            if page_image_paths:
+                metadata["image_count"] = len(page_image_paths)
+                metadata["image_paths"] = ";".join(page_image_paths)
+            documents.append(
+                Document(page_content=self._apply_images(text, image_map), metadata=metadata)
+            )
         return documents
 
     @staticmethod
