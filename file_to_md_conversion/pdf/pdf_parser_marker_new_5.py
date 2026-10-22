@@ -445,6 +445,12 @@ class PdfParser(BaseDocumentParser):
             compact = re.sub(r"\s", "", text)
             letters = sum(ch.isalpha() for ch in compact)
             if letters < PIC_OCR_MIN_LETTERS or letters / max(len(compact), 1) < PIC_OCR_LETTER_RATIO:
+                # OCR produced something but it looked like noise - keep the
+                # raw output in the log so a failing page can be diagnosed
+                logger.info(
+                    f"Picture OCR rejected as noise (letters={letters}, "
+                    f"compact={len(compact)}): {text[:150]!r}"
+                )
                 return ""
             return text
         except Exception as e:
@@ -505,6 +511,7 @@ class PdfParser(BaseDocumentParser):
             mat = pymupdf.Matrix(PLACEHOLDER_PAGE_DPI / 72, PLACEHOLDER_PAGE_DPI / 72)
             pix = pdf_doc[info.number - 1].get_pixmap(matrix=mat, alpha=False)
             image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            render_size = image.size
             image = self._crop_to_ink(image)
         except Exception as e:
             logger.warning(f"[p{info.number}] page render failed ({source_name}): {e}")
@@ -514,6 +521,16 @@ class PdfParser(BaseDocumentParser):
         if ocr_text:
             logger.info(
                 f"[p{info.number}] recovered {len(ocr_text)} chars via cropped page OCR ({source_name})"
+            )
+        else:
+            # The sizes show which step failed: render == crop means the ink
+            # touches the frame (nothing to crop, the fragment still floats in
+            # white space); a small crop with no text means the VLM could not
+            # read it (check the saved page_NNN.png).
+            logger.warning(
+                f"[p{info.number}] cropped page OCR returned no text "
+                f"(render={render_size[0]}x{render_size[1]} -> "
+                f"crop={image.size[0]}x{image.size[1]}) ({source_name})"
             )
         rel_path = self._save_rendered_image(
             image, source_name, pdf_bytes, f"page_{info.number:03d}.png"
