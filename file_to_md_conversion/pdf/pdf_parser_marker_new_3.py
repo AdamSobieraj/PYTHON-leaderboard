@@ -31,6 +31,15 @@ logger = logging.getLogger(__name__)
 # SETTINGS
 # ======================================================================
 
+# --- OCR approach: every page is a (possibly skewed) scan ---
+# Marker is forced to OCR the whole file instead of trusting the embedded
+# text layer: pdftext extraction is skipped entirely, and in balanced mode
+# each page is rebuilt from a single full-page OCR call on the rendered
+# image - so a skewed scan is read from the picture, not from a misaligned
+# text layer. The PyMuPDF text layer stays only as a last-resort fallback
+# for pages whose OCR produced nothing usable.
+FORCE_OCR = True
+
 # --- Page classification ---
 MIN_TEXT_CHARS = 20               # fewer characters in the text layer = "no real text"
 BLANK_INK_RATIO = 0.001           # share of "ink" pixels below which a page is blank
@@ -92,14 +101,17 @@ class PdfParser(BaseDocumentParser):
     Requires GPU acceleration for acceptable performance.
 
     Steps:
-    1. Classify every page: text | scan | drawing | blank.
-    2. Convert the whole file with Marker (page numbers match the original file).
+    1. Classify every page: text | scan | drawing | blank (blank pages are
+       skipped; they mark the boundary between stitched documents -
+       metadata["section_index"]).
+    2. Convert the whole file with Marker in force-OCR mode (FORCE_OCR):
+       every page is treated as a (possibly skewed) scan and re-read from the
+       rendered image - the embedded text layer is not trusted.
     3. Build one Document per page:
-       - text    -> Marker output (fallback: PyMuPDF text layer),
-       - scan    -> Marker OCR output, noise-filtered,
-       - drawing -> placeholder (plan / image without text),
-       - blank   -> skipped; blank pages also mark a boundary between documents
-                    (metadata["section_index"]).
+       - Marker OCR text is the source of truth for every page,
+       - the PyMuPDF text layer is used only when OCR produced nothing usable
+         (empty / noise),
+       - a page with no extractable text at all gets a placeholder.
     """
 
     # Surya models are heavy (VRAM) - load them once per process
@@ -120,9 +132,14 @@ class PdfParser(BaseDocumentParser):
     _MD_IMAGE_REF_RE = re.compile(r"!\[[^\]]*\]\(([^)]*)\)")
 
     # A lettered sub-list item that Marker renumbered: an ordered-list marker
-    # ("1.") directly followed by the original letter marker ("a.") plus a space,
-    # e.g. "1. a. txt". Group 1 = leading indent, group 2 = the letter.
-    _LIST_DOUBLE_MARKER_RE = re.compile(r"^(\s*)\d+\.\s+([a-z])\.(?=\s)", re.MULTILINE)
+    # ("1." / "1)") directly followed by the original letter marker ("a." /
+    # "A." / "a)") plus a space or end of line, e.g. "1. a. txt" -> "a. txt".
+    # Matches at any position - full-page VLM OCR often collapses the whole
+    # list into one line - but the lookbehind keeps dotted chapter.item
+    # numbering like "2.1." intact. Group 1 = the letter marker to keep.
+    _LIST_DOUBLE_MARKER_RE = re.compile(
+        r"(?<![\d.])\d+[.)]\s+([a-zA-Z][.)])(?=\s|$)", re.MULTILINE
+    )
 
     def __init__(self, languages: str = "pl,en", images_dir: str = IMAGES_DIR):
         """
@@ -138,9 +155,16 @@ class PdfParser(BaseDocumentParser):
         self._device = self._detect_device()
         self.models = self._get_shared_models()
 
-        # Converter configuration (paginate_output -> page separators in Markdown)
+        # Converter configuration:
+        #  - paginate_output -> page separators in the Markdown
+        #  - force_ocr       -> OCR every page from the rendered image, ignoring
+        #                       the embedded text layer (see FORCE_OCR)
         config_dict = ConfigParser(
-            {"languages": languages, "paginate_output": True}
+            {
+                "languages": languages,
+                "paginate_output": True,
+                "force_ocr": FORCE_OCR,
+            }
         ).generate_config_dict()
         self.converter = PdfConverter(
             config=config_dict,
@@ -569,10 +593,11 @@ class PdfParser(BaseDocumentParser):
     def _collapse_list_numbers(self, text: str) -> str:
         """
         Removes the redundant outer numbering Marker adds in front of lettered
-        sub-list items ("1. a. txt" -> "a. txt"), so the document's original
-        a/b/c lettering is what remains.
+        sub-list items ("1. a. txt" -> "a. txt" - also when the whole list sits
+        on one line, the letter is uppercase, or the outer marker is "1)"), so
+        the document's original a/b/c lettering is what remains.
         """
-        return self._LIST_DOUBLE_MARKER_RE.sub(r"\1\2.", text)
+        return self._LIST_DOUBLE_MARKER_RE.sub(r"\1", text)
 
     def _build_documents(
         self,
@@ -585,7 +610,6 @@ class PdfParser(BaseDocumentParser):
         documents: List[Document] = []
         blank_pages: List[int] = []
         non_text_pages: List[int] = []
-        failed_pages: List[int] = []
 
         for info in pages_info:
             if info.kind == "blank":
@@ -597,36 +621,19 @@ class PdfParser(BaseDocumentParser):
             page_type = info.kind
             method = "marker"
 
-            if info.kind == "text":
-                visible = self._MD_IMAGE_RE.sub("", text).strip()
-                # Fallback: text layer from PyMuPDF when Marker returned nothing
-                # or lost a large part of the text (e.g. a block classified as
-                # header/footer or as a picture)
-                if len(visible) < 0.5 * len(info.plain_text):
-                    text = info.plain_text
-                    method = "pymupdf-text"
-                # FIX: this branch is currently unreachable in practice, because
-                # info.kind == "text" implies len(info.plain_text) >= MIN_TEXT_CHARS
-                # (see _classify_page), so `text` can never be empty here at this
-                # point. Left in place defensively in case the classification
-                # logic above changes in the future (e.g. MIN_TEXT_CHARS tuning,
-                # or plain_text consisting only of whitespace/control characters).
-                if not text:
-                    failed_pages.append(info.number)
-                    continue
-            else:  # 'scan' or 'drawing'
-                without_images = self._MD_IMAGE_RE.sub("", text).strip()
-                if self._is_noise(without_images):
-                    text = info.plain_text  # whatever short text exists, may be empty
-                    method = "pymupdf-text"
-                    page_type = "drawing"
+            # OCR-first (FORCE_OCR): Marker re-read every page from the
+            # rendered image, so its output is the source of truth - also for
+            # pages that carry an embedded text layer (on a skewed scan that
+            # layer is exactly what cannot be trusted). The PyMuPDF layer is
+            # only a last resort, for pages whose OCR produced nothing usable.
+            if self._is_noise(self._MD_IMAGE_RE.sub("", text).strip()):
+                text = info.plain_text
+                method = "pymupdf-text"
 
-            # FIX: previously this only checked `if not text:`, so a short,
-            # noisy PyMuPDF fallback (1-19 chars of garbage, e.g. a stray
-            # scan artifact) could slip through as "real" content without a
-            # placeholder. Now we also re-check _is_noise() on the fallback
-            # text itself.
-            if not text or (info.kind != "text" and self._is_noise(text)):
+            # A page still without usable text (empty / noise from both
+            # sources) becomes a placeholder, so e.g. a plan page is not
+            # silently dropped.
+            if not text or self._is_noise(text):
                 logger.warning(
                     f"[p{info.number}] placeholder: kind={info.kind} "
                     f"plain={len(info.plain_text)} discarded={text[:200]!r}"
@@ -665,8 +672,6 @@ class PdfParser(BaseDocumentParser):
             logger.info(f"Skipped blank pages {blank_pages} ({source_name})")
         if non_text_pages:
             logger.info(f"Pages without extractable text (plans/images) {non_text_pages} ({source_name})")
-        if failed_pages:
-            logger.warning(f"No text from pages {failed_pages} ({source_name})")
 
         return documents
 
