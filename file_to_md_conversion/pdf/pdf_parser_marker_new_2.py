@@ -6,6 +6,7 @@ if platform.system() == "Darwin" and platform.machine() == "arm64":
     os.environ.setdefault("TORCH_DEVICE", "mps")
     os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
+import hashlib
 import io
 import logging
 import math
@@ -47,7 +48,7 @@ except ImportError:
 # ======================================================================
 
 # Master switch: remove headers and footers before extraction?
-REMOVE_HEADERS_FOOTERS = False
+REMOVE_HEADERS_FOOTERS = True
 
 # How to find headers / footers (used only if REMOVE_HEADERS_FOOTERS is True):
 #   "auto"  - removes only text blocks in the top/bottom zone that REPEAT across
@@ -98,6 +99,16 @@ MIN_OCR_LETTER_RATIO = 0.4        # letters / non-space characters
 INCLUDE_NON_TEXT_PAGES = True     # keep them as a short placeholder Document
 NON_TEXT_PLACEHOLDER = "[Strona bez tekstu: rysunek, plan lub obraz]"
 
+# --- Images / figures detected by Marker ---
+# Pictures and figures that Marker extracts are saved to
+#   <IMAGES_DIR>/<document name>_<hash>/<marker file name>
+# and the reference in the Markdown is replaced with a marker built from
+# IMAGE_MARKER_TEMPLATE ({path} = relative path, {name} = file name).
+# Markdown-image variant: IMAGE_MARKER_TEMPLATE = "![OBRAZ {name}]({path})"
+SAVE_IMAGES = True
+IMAGES_DIR = "img"
+IMAGE_MARKER_TEMPLATE = "[OBRAZ: {path}]"
+
 
 @dataclass
 class PageInfo:
@@ -142,6 +153,9 @@ class PdfParser(BaseDocumentParser):
     # Markdown image references (Marker emits them for figures)
     _MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 
+    # Same, but captures the file name/path (group 1)
+    _MD_IMAGE_REF_RE = re.compile(r"!\[[^\]]*\]\(([^)]*)\)")
+
     # FIX (list numbering): Marker renders list items with its own markdown
     # prefix ("1. " or "- ") while the original numbering from the PDF stays in
     # the text, which yields "1. 2. Text" instead of "2. Text".
@@ -150,16 +164,23 @@ class PdfParser(BaseDocumentParser):
     # Hierarchical numbering ("1.1", "2.3.1") and ordinary lists ("1. Text")
     # are left untouched. To also handle letters ("a)", "b)") change the second
     # group to (\d{1,3}[.)]|[a-zA-Z][.)]).
+    # Horizontal whitespace: spaces, tabs, \u00a0, em-spaces etc. (but NOT
+    # newlines) or the literal "&nbsp;". The gap between the two numbers is
+    # often made of non-breaking spaces, which a plain [ \t] would not match.
+    _HWS = r"(?:[^\S\r\n]|&nbsp;)"
+
     _LIST_PREFIX_DUP_RE = re.compile(
-        r"^([ \t]*)(?:\d{1,3}\.|[-*+])[ \t]+(\d{1,3}[.)])[ \t]+",
+        rf"^({_HWS}*)(?:\d{{1,3}}\.|[-*+]){_HWS}+(\d{{1,3}}[.)])(?={_HWS}|$)",
         re.MULTILINE,
     )
 
-    def __init__(self, languages: str = "pl,en"):
+    def __init__(self, languages: str = "pl,en", images_dir: str = IMAGES_DIR):
         """
         Args:
             languages: Comma-separated language codes (e.g. "pl,en").
                        May be ignored in newer Marker versions.
+            images_dir: Folder for pictures/figures extracted by Marker
+                        (used only if SAVE_IMAGES is True).
         """
         if not MARKER_AVAILABLE:
             raise ImportError("Install Marker: pip install marker-pdf")
@@ -187,6 +208,7 @@ class PdfParser(BaseDocumentParser):
         )
 
         self.languages = languages
+        self.images_dir = images_dir
 
         # FIX: hard, queryable counter for the "no page separators found"
         # fallback path, instead of relying solely on an easily-missed
@@ -249,12 +271,19 @@ class PdfParser(BaseDocumentParser):
             md_text = (rendered.markdown or "").strip()
             # FIX (list numbering): remove the duplicated list prefix added by Marker
             md_text = self._fix_list_numbering(md_text)
+            # Pictures/figures detected by Marker -> files in images_dir.
+            # The Markdown still holds the raw "![](...)" references at this
+            # point; they are replaced later, when the documents are built
+            # (the page logic needs to see them to detect image-only pages).
+            image_map = self._save_images(
+                getattr(rendered, "images", None), source_name, pdf_to_process
+            )
             logger.info(f"Conversion finished: {source_name}")
 
             # ── 4. Building documents ────────────────────────────
             if pages_info is None:
                 # No PyMuPDF -> no classification, only Marker's own pagination
-                documents = self._build_documents_unclassified(md_text, source_name)
+                documents = self._build_documents_unclassified(md_text, source_name, image_map)
             else:
                 marker_pages = self._split_marker_pages(md_text)
                 if marker_pages is None:
@@ -270,7 +299,12 @@ class PdfParser(BaseDocumentParser):
                         f"(cumulative fallback count: {fallback_count})"
                     )
                     documents = (
-                        [Document(page_content=md_text, metadata=self._base_metadata(source_name))]
+                        [
+                            Document(
+                                page_content=self._apply_images(md_text, image_map),
+                                metadata=self._base_metadata(source_name),
+                            )
+                        ]
                         if md_text
                         else []
                     )
@@ -280,7 +314,9 @@ class PdfParser(BaseDocumentParser):
                             f"Marker returned page {max(marker_pages)} but the file has "
                             f"{len(pages_info)} pages ({source_name}) - page numbers may be misaligned."
                         )
-                    documents = self._build_documents(marker_pages, pages_info, source_name)
+                    documents = self._build_documents(
+                        marker_pages, pages_info, source_name, image_map
+                    )
 
             if not documents:
                 logger.warning(f"No content extracted for '{source_name}'")
@@ -337,7 +373,7 @@ class PdfParser(BaseDocumentParser):
         carries its own number from the PDF ("1. 2. Text" -> "2. Text").
         Page separators ("{0}------...") start with '{', so they are never touched.
         """
-        return cls._LIST_PREFIX_DUP_RE.sub(r"\1\2 ", text)
+        return cls._LIST_PREFIX_DUP_RE.sub(r"\1\2", text)
 
     # ══════════════════════════════════════════════════════════════
     # PAGE ANALYSIS (classification + section boundaries)
@@ -417,7 +453,13 @@ class PdfParser(BaseDocumentParser):
         if not compact:
             return True
         letters = sum(ch.isalpha() for ch in compact)
-        return letters < MIN_OCR_LETTERS or letters / len(compact) < MIN_OCR_LETTER_RATIO
+        if letters < 3:
+            return True
+        # Short fragments are judged only by the number of letters; the
+        # letter/character ratio is applied only to longer text
+        if len(compact) < 60:
+            return False
+        return letters / len(compact) < MIN_OCR_LETTER_RATIO
 
     # ══════════════════════════════════════════════════════════════
     # BUILDING DOCUMENTS
@@ -463,8 +505,11 @@ class PdfParser(BaseDocumentParser):
             method = "marker"
 
             if info.kind == "text":
-                if not text:
-                    # Fallback: text layer from PyMuPDF
+                visible = self._MD_IMAGE_RE.sub("", text).strip()
+                # Fallback: text layer from PyMuPDF when Marker returned nothing
+                # or lost a large part of the text (e.g. a block classified as
+                # header/footer or as a picture)
+                if len(visible) < 0.5 * len(info.plain_text):
                     text = info.plain_text
                     method = "pymupdf-text"
                 # FIX: this branch is currently unreachable in practice, because
@@ -488,7 +533,11 @@ class PdfParser(BaseDocumentParser):
             # scan artifact) could slip through as "real" content without a
             # placeholder. Now we also re-check _is_noise() on the fallback
             # text itself.
-            if not text or self._is_noise(text):
+            if not text or (info.kind != "text" and self._is_noise(text)):
+                logger.warning(
+                    f"[p{info.number}] placeholder: kind={info.kind} "
+                    f"plain={len(info.plain_text)} discarded={text[:200]!r}"
+                )
                 non_text_pages.append(info.number)
                 if not INCLUDE_NON_TEXT_PAGES:
                     continue
