@@ -330,6 +330,7 @@ class PdfParser(BaseDocumentParser):
             return {}
 
         target_dir = self._images_folder(source_name, pdf_bytes)
+        folder = os.path.basename(target_dir)
 
         image_map: Dict[str, str] = {}
         skipped = 0
