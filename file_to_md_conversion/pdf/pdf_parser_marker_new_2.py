@@ -114,6 +114,18 @@ SAVE_IMAGES = True
 IMAGES_DIR = "img"
 IMAGE_MARKER_TEMPLATE = "[OBRAZ: {path}]"
 
+# --- Second OCR pass on pictures ---
+# Marker does not run OCR inside blocks it labels as Picture/Figure. A scanned
+# fragment pasted into a page (e.g. a quarter of a page, slightly skewed) is
+# often labelled that way. With OCR_PICTURES on, every picture Marker detected
+# is wrapped in a one-page PDF and converted again, so Marker treats it as a
+# scan. Results that look like garbage (photos, logos, stamps) are discarded
+# with the same letter thresholds as the OCR noise filter above.
+OCR_PICTURES = True
+OCR_PICTURE_MIN_PX = 150          # pictures with a shorter side are skipped
+OCR_PICTURES_MAX_PER_DOC = 50     # safety limit of extra conversions per file
+OCR_TEXT_LABEL = "[Tekst rozpoznany z obrazu]"
+
 
 @dataclass
 class PageInfo:
@@ -275,6 +287,8 @@ class PdfParser(BaseDocumentParser):
                 rendered = self.converter(temp_pdf_path)
             md_text = (rendered.markdown or "").strip()
             # FIX (list numbering): remove the duplicated list prefix added by Marker
+            # Second OCR pass on pictures (e.g. a scanned fragment pasted into a page)
+            md_text = self._inject_picture_ocr(md_text, getattr(rendered, "images", None))
             if FIX_LIST_NUMBERING:
                 md_text = self._fix_list_numbering(md_text)
             # Pictures/figures detected by Marker -> files in images_dir.
@@ -441,6 +455,85 @@ class PdfParser(BaseDocumentParser):
         if not text or not image_map:
             return []
         return [image_map[n] for n in self._MD_IMAGE_REF_RE.findall(text) if n in image_map]
+
+    def _ocr_picture(self, image) -> str:
+        """
+        Second Marker pass on ONE picture. The picture is wrapped in a one-page
+        PDF without a text layer, so Marker treats it as a scan and runs OCR
+        instead of labelling it a figure again. Returns "" for noise.
+        """
+        if not FITZ_AVAILABLE:
+            return ""
+
+        width, height = image.size
+        if min(width, height) < OCR_PICTURE_MIN_PX:
+            return ""
+
+        tmp_path = None
+        try:
+            buf = io.BytesIO()
+            image.convert("RGB").save(buf, format="PNG")
+
+            page_w = 595.0  # A4 width in points; height keeps the aspect ratio
+            page_h = page_w * height / width
+            doc = pymupdf.open()
+            try:
+                page = doc.new_page(width=page_w, height=page_h)
+                page.insert_image(page.rect, stream=buf.getvalue())
+                pdf_bytes = doc.tobytes()
+            finally:
+                doc.close()
+
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp.write(pdf_bytes)
+                tmp_path = tmp.name
+
+            with self._convert_lock:
+                rendered = self.converter(tmp_path)
+
+            text = rendered.markdown or ""
+            text = self._PAGE_SEPARATOR_RE.sub("\n", text)
+            text = self._MD_IMAGE_RE.sub("", text).strip()
+
+            compact = re.sub(r"\s", "", text)
+            letters = sum(ch.isalpha() for ch in compact)
+            if letters < MIN_OCR_LETTERS or letters / max(len(compact), 1) < MIN_OCR_LETTER_RATIO:
+                return ""
+            return text
+        except Exception as e:
+            logger.warning(f"Picture OCR failed: {e}")
+            return ""
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    def _inject_picture_ocr(self, md_text: str, images: Optional[Dict[str, object]]) -> str:
+        """
+        Puts the text recognized in pictures right after their '![](file)'
+        references. Done on the raw Marker Markdown, BEFORE the page logic, so a
+        page whose only content is such a picture is no longer treated as empty.
+        """
+        if not OCR_PICTURES or not images or not md_text:
+            return md_text
+
+        ocr_by_name: Dict[str, str] = {}
+        candidates = list(images.items())[:OCR_PICTURES_MAX_PER_DOC]
+        for name, image in candidates:
+            text = self._ocr_picture(image)
+            if text:
+                ocr_by_name[name] = text
+
+        logger.info(f"Picture OCR: text recognized in {len(ocr_by_name)}/{len(candidates)} pictures")
+        if not ocr_by_name:
+            return md_text
+
+        def _replace(match: "re.Match") -> str:
+            text = ocr_by_name.get(match.group(1))
+            if not text:
+                return match.group(0)
+            return f"{match.group(0)}\n\n{OCR_TEXT_LABEL}\n{text}\n"
+
+        return self._MD_IMAGE_REF_RE.sub(_replace, md_text)
 
     # ══════════════════════════════════════════════════════════════
     # PAGE ANALYSIS (classification + section boundaries)
