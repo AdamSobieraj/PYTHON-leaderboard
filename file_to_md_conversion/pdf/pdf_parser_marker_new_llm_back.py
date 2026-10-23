@@ -91,15 +91,13 @@ OCR_TEXT_LABEL = "[Text recognized from the image]"
 PIC_OCR_MIN_LETTERS = 6
 PIC_OCR_LETTER_RATIO = 0.3
 
-# --- Placeholder pages where Marker detected no picture ---
-# A scanned fragment that Marker treats as a scan (not a Picture/Figure)
-# leaves no image behind, and when its OCR comes back as noise the page
-# would become a bare placeholder with nothing saved. For such pages the
-# page content is taken at the best available quality - the embedded scan
-# at its native resolution if the page holds one, otherwise a PyMuPDF
-# render - and cropped to its ink region: the VLM pass is run on the
-# crop (the text fills the frame, so it reads much better) and the crop is
-# saved to the images folder, so the drawing/plan is not lost.
+# --- Pages below the text limit (plans, drawings, scans, photos) ---
+# Every page whose PyMuPDF text layer holds fewer than MIN_TEXT_CHARS
+# characters (kind 'scan'/'drawing') is rendered, cropped to its ink
+# region and sent to the VLM - its transcription becomes the page content
+# (Marker's output is used only as a fallback when the VLM returns
+# nothing). The crop is saved to the images folder, so the drawing/plan is
+# not lost. (Flag names kept from the "placeholder recovery" era.)
 OCR_PLACEHOLDER_PAGES = True          # VLM pass on the ink crop
 SAVE_PLACEHOLDER_PAGE_IMAGES = True   # save the ink crop as a PNG
 PLACEHOLDER_PAGE_DPI = 150            # render resolution of the page
@@ -126,12 +124,13 @@ class PdfParser(BaseDocumentParser):
     1. Classify every page: text | scan | drawing | blank.
     2. Convert the whole file with Marker (page numbers match the original file).
     3. Build one Document per page:
-       - text    -> Marker output (fallback: PyMuPDF text layer),
-       - scan    -> Marker OCR output, noise-filtered,
-       - drawing -> placeholder (plan / image without text); as a last
-                    resort the page is rendered and cropped to ink, the VLM
-                    pass is tried on the crop, and the crop is saved to the
-                    images folder so the drawing is not lost,
+       - text (layer >= MIN_TEXT_CHARS) -> Marker output
+         (fallback: PyMuPDF text layer),
+       - below the limit (scan / drawing) -> the page is rendered, cropped
+         to ink and transcribed by the VLM (the crop is saved to the images
+         folder so the drawing/plan is not lost); when the VLM returns
+         nothing, the Marker output (if not noise), the PyMuPDF text layer
+         or a short placeholder are used,
        - blank   -> skipped; blank pages also mark a boundary between documents
                     (metadata["section_index"]).
     """
@@ -632,7 +631,7 @@ class PdfParser(BaseDocumentParser):
 
         return self._MD_IMAGE_REF_RE.sub(_replace, md_text)
 
-    def _recover_placeholder_page(
+    def _vlm_page_pass(
         self,
         pdf_doc: Optional["pymupdf.Document"],
         info: PageInfo,
@@ -640,14 +639,11 @@ class PdfParser(BaseDocumentParser):
         doc_hash: Optional[str],
     ) -> Tuple[str, Optional[str]]:
         """
-        Last resort for a page that is about to become a non-text placeholder
-        but on which Marker detected no picture: a scanned fragment (e.g. a
-        quarter page, slightly skewed) that Marker treated as a scan and whose
-        OCR came back as noise. Renders the page with PyMuPDF and crops it to
-        ink. Returns (ocr_text, saved_image_path): the VLM pass is
-        tried on the crop (the text fills the frame, so it reads much better)
-        and the crop is saved to the images folder, so the drawing/plan is not
-        lost.
+        VLM pass on a page below the text limit (MIN_TEXT_CHARS): the page is
+        rendered with PyMuPDF and cropped to its ink region. Returns
+        (ocr_text, saved_image_path): the VLM is run on the crop (the text
+        fills the frame, so it reads much better) and the crop is saved to
+        the images folder, so the drawing/plan is not lost.
         """
         if pdf_doc is None or not doc_hash:
             return "", None
@@ -863,9 +859,10 @@ class PdfParser(BaseDocumentParser):
             raw_marker_text = text  # still contains the "![](...)" references
             page_type = info.kind
             method = "marker"
-            # Images Marker detected on this page (computed early: the
-            # placeholder recovery below may add its saved page render)
+            # Images Marker detected on this page (computed early: the page
+            # VLM pass below may add its saved ink crop)
             page_image_paths = self._image_paths(raw_marker_text, image_map)
+            page_render_path = None  # ink crop saved by the page VLM pass
 
             if info.kind == "text":
                 visible = self._MD_IMAGE_RE.sub("", text).strip()
@@ -892,47 +889,51 @@ class PdfParser(BaseDocumentParser):
                 if not text:
                     failed_pages.append(info.number)
                     continue
-            else:  # 'scan' or 'drawing'
-                without_images = self._MD_IMAGE_RE.sub("", text).strip()
-                if self._is_noise(without_images):
-                    text = info.plain_text  # whatever short text exists, may be empty
-                    method = "pymupdf-text"
-                    page_type = "drawing"
-
-            # FIX: previously this only checked `if not text:`, so a short,
-            # noisy PyMuPDF fallback (1-19 chars of garbage, e.g. a stray
-            # scan artifact) could slip through as "real" content without a
-            # placeholder. Now we also re-check _is_noise() on the fallback
-            # text itself.
-            if not text or (info.kind != "text" and self._is_noise(text)):
-                logger.warning(
-                    f"[p{info.number}] placeholder: kind={info.kind} "
-                    f"plain={len(info.plain_text)} discarded={text[:200]!r}"
-                )
-                # Marker treated the page as a scan, its OCR came back as
-                # noise, and no picture block was detected - the drawing/plan
-                # would be lost entirely. Render the page and crop it to ink:
-                # try the second OCR pass on the crop and save the crop.
-                fallback_text, rel_path = self._recover_placeholder_page(
-                    pdf_doc, info, source_name, doc_hash
-                )
-                if rel_path:
-                    page_image_paths.append(rel_path)
-                if fallback_text:
-                    text = f"{OCR_TEXT_LABEL}\n{fallback_text}"
-                    method = "vlm-page"
-                else:
-                    non_text_pages.append(info.number)
-                    if not INCLUDE_NON_TEXT_PAGES:
-                        continue
-                    text = NON_TEXT_PLACEHOLDER
-                    method = "placeholder"
+            else:  # 'scan' or 'drawing' - text layer below MIN_TEXT_CHARS
+                # The page goes to the VLM: render + ink crop + vision model.
+                # Exception: a page whose pictures already went through the VLM
+                # image pass (_inject_picture_ocr) and produced text - a
+                # page-level pass would only repeat it at the cost of another
+                # (slow, serialized) inference call.
+                page_type = "drawing"
+                if OCR_TEXT_LABEL not in raw_marker_text:
+                    vlm_text, page_render_path = self._vlm_page_pass(
+                        pdf_doc, info, source_name, doc_hash
+                    )
+                    if vlm_text:
+                        text = f"{OCR_TEXT_LABEL}\n{vlm_text}"
+                        method = "vlm-page"
+                    elif not self._is_noise(self._MD_IMAGE_RE.sub("", raw_marker_text).strip()):
+                        # VLM produced nothing: keep the Marker output
+                        logger.info(
+                            f"[p{info.number}] page VLM empty - keeping Marker text"
+                        )
+                    elif not self._is_noise(info.plain_text):
+                        text = info.plain_text
+                        method = "pymupdf-text"
+                    else:
+                        non_text_pages.append(info.number)
+                        logger.warning(
+                            f"[p{info.number}] placeholder: kind={info.kind} "
+                            f"plain={len(info.plain_text)} marker={raw_marker_text[:200]!r}"
+                        )
+                        if not INCLUDE_NON_TEXT_PAGES:
+                            continue
+                        text = NON_TEXT_PLACEHOLDER
+                        method = "placeholder"
+                if page_render_path:
+                    page_image_paths.append(page_render_path)
 
             if method == "marker":
                 text = self._apply_images(text, image_map)
+                if page_render_path:
+                    # The page VLM ran and returned nothing, but the saved ink
+                    # crop is still a useful artifact - reference it
+                    text = text + "\n\n" + self._image_marker(page_render_path)
             elif page_image_paths:
-                # Text came from PyMuPDF or is the placeholder: the Marker text
-                # with the references was not used, so append the markers
+                # Text came from the VLM/PyMuPDF or is the placeholder: the
+                # Marker text with the references was not used, so append the
+                # markers
                 text = text + "\n\n" + "\n".join(self._image_marker(p) for p in page_image_paths)
 
             metadata = self._base_metadata(source_name)

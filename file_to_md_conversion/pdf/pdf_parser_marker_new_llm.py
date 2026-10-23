@@ -109,6 +109,11 @@ OCR_PLACEHOLDER_PAGES = True          # run the VLM pass on the ink crop
 SAVE_PLACEHOLDER_PAGE_IMAGES = True   # save the ink crop as a PNG
 PLACEHOLDER_PAGE_DPI = 150            # render resolution of the page
 PLACEHOLDER_PAGE_MAX_PX = 3000        # longest side cap (px) of that render
+BLANK_INK_DELTA = 10                  # a page with no pixel differing from
+                                      # the background by this much is
+                                      # provably blank -> EMPTY without a VLM
+                                      # call (any fainter mark still goes to
+                                      # the model)
 
 
 @dataclass
@@ -692,10 +697,11 @@ class PdfParser(BaseDocumentParser):
         with PyMuPDF, cropped to its ink region and sent to the vision model,
         which answers exactly "EMPTY" (nothing usable on the page), exactly
         "IMAGE" (a drawing/plan/diagram/photo) or the transcribed text as
-        Markdown (strict parsing: anything else is treated as the text).
-        The ink crop is saved to the images folder for every non-EMPTY
-        decision (gated by SAVE_PLACEHOLDER_PAGE_IMAGES), so a drawing/plan is
-        never lost from the output.
+        Markdown (strict parsing: anything else is treated as the text). A
+        provably blank render (no mark at all) is decided EMPTY without the
+        VLM call. The ink crop is saved to the images folder for every
+        non-EMPTY decision (gated by SAVE_PLACEHOLDER_PAGE_IMAGES), so a
+        drawing/plan is never lost from the output.
         Returns (decision, text, saved_image_path): decision is "empty",
         "image" or "text"; text is the Markdown for decision "text" (""
         otherwise); saved_image_path is the relative path of the saved crop
@@ -716,6 +722,22 @@ class PdfParser(BaseDocumentParser):
             )
             image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
             render_size = image.size
+            # Cheap pre-check before the VLM (one histogram): a page without
+            # ANY pixel differing from the background by BLANK_INK_DELTA - in
+            # either direction, so an inverted dark page counts as a mark too
+            # - is provably blank and never hides a table, so it skips the
+            # (slow) VLM call. Anything fainter still goes to the model.
+            hist = image.convert("L").histogram()
+            background = max(range(256), key=hist.__getitem__)
+            marks = sum(hist[: max(0, background - BLANK_INK_DELTA)]) + sum(
+                hist[min(256, background + BLANK_INK_DELTA + 1):]
+            )
+            if marks == 0:
+                logger.info(
+                    f"[p{info.number}] page VLM: EMPTY "
+                    f"(provably blank, VLM skipped) ({source_name})"
+                )
+                return "empty", "", None
             image = self._crop_to_ink(image)
         except Exception as e:
             logger.warning(f"[p{info.number}] page render failed ({source_name}): {e}")
