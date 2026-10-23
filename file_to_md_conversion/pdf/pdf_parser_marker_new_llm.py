@@ -57,7 +57,7 @@ MIN_OCR_LETTER_RATIO = 0.4        # letters / non-space characters
 # Marker output for a page WITHOUT a real text layer: below this many visible
 # characters it is a fragment (a few OCR'd words on a mostly-scanned page),
 # not the page's content -> treated as noise, the page goes to the VLM pass.
-MIN_MARKER_CHARS = 200
+MIN_MARKER_CHARS = 40
 
 # --- Pages without extractable text (plans, drawings, photos, stamps) ---
 INCLUDE_NON_TEXT_PAGES = True     # keep them as a short placeholder Document
