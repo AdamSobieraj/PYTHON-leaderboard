@@ -548,6 +548,12 @@ class PdfParser(BaseDocumentParser):
             text = self._strip_code_fence(text)
             text = self._MD_IMAGE_RE.sub("", text).strip()
 
+            # The model signals "no readable text" with the EMPTY sentinel from
+            # the prompt - reject it explicitly; the noise filter below only
+            # catches it by luck (5 letters < PIC_OCR_MIN_LETTERS).
+            if text.upper().strip(" .!-") == "EMPTY":
+                return ""
+
             compact = re.sub(r"\s", "", text)
             letters = sum(ch.isalpha() for ch in compact)
             if letters < PIC_OCR_MIN_LETTERS or letters / max(len(compact), 1) < PIC_OCR_LETTER_RATIO:
