@@ -15,7 +15,7 @@ import tempfile
 import threading
 from collections import Counter
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, cast
 import pymupdf
 from dotenv import load_dotenv
 load_dotenv()
@@ -24,6 +24,7 @@ import torch
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
+from pydantic import SecretStr
 from marker.config.parser import ConfigParser
 from marker.converters.pdf import PdfConverter
 from marker.models import create_model_dict
@@ -222,7 +223,10 @@ class PdfParser(BaseDocumentParser):
         if LLM_BASE_URL and LLM_MODEL:
             self.vlm = ChatOpenAI(
                 base_url=LLM_BASE_URL,
-                api_key=LLM_API_KEY,
+                # the stubs type api_key as SecretStr | None | callable - a
+                # plain str is only accepted via pydantic coercion, so wrap it
+                # explicitly (same value stored, no behavior change)
+                api_key=SecretStr(LLM_API_KEY) if LLM_API_KEY is not None else None,
                 model=LLM_MODEL,
                 max_tokens=VLM_MAX_TOKENS,
                 temperature=0.0,
@@ -423,7 +427,7 @@ class PdfParser(BaseDocumentParser):
 
     def _save_images(
         self,
-        images: Optional[Dict[str, object]],
+        images: Optional[Dict[str, Image.Image]],
         source_name: str,
         doc_hash: str,
     ) -> Dict[str, str]:
@@ -483,7 +487,7 @@ class PdfParser(BaseDocumentParser):
         return [image_map[n] for n in self._MD_IMAGE_REF_RE.findall(text) if n in image_map]
 
     @staticmethod
-    def _crop_to_ink(image):
+    def _crop_to_ink(image: "Image.Image") -> "Image.Image":
         """
         Crops a picture to the region that actually contains ink. A scanned
         fragment pasted onto a mostly-white page otherwise occupies only a
@@ -495,7 +499,10 @@ class PdfParser(BaseDocumentParser):
         try:
             gray = image.convert("L")
             hist = gray.histogram()
-            background = max(range(256), key=hist.__getitem__)
+            # a lambda, not hist.__getitem__: the bound method is an Overload
+            # ((int) -> int | (slice) -> list[int]) and PyCharm cannot match
+            # it against max()'s key signature
+            background = max(range(256), key=lambda v: hist[v])
             # ink mask: 255 where the pixel is darker than the dominant level
             mask = gray.point(lambda v: 255 if v < background - INK_DELTA else 0)
             bbox = mask.getbbox()
@@ -510,7 +517,7 @@ class PdfParser(BaseDocumentParser):
         except Exception:
             return image  # never let cropping break the OCR pass
 
-    def _vlm_picture(self, image) -> str:
+    def _vlm_picture(self, image: "Image.Image") -> str:
         """
         Second pass on ONE picture via the vision model (LLM_* from .env): the
         ink-cropped picture is sent to the VLM, which returns the recognized
@@ -527,7 +534,7 @@ class PdfParser(BaseDocumentParser):
             scale = VLM_MAX_PX / max(width, height)
             image = image.resize(
                 (max(1, int(width * scale)), max(1, int(height * scale))),
-                Image.LANCZOS,
+                Image.Resampling.LANCZOS,
             )
 
         try:
@@ -590,7 +597,7 @@ class PdfParser(BaseDocumentParser):
     def _inject_picture_ocr(
         self,
         md_text: str,
-        images: Optional[Dict[str, object]],
+        images: Optional[Dict[str, Image.Image]],
         image_map: Optional[Dict[str, str]] = None,
         total_pages: Optional[int] = None,
     ) -> str:
@@ -659,9 +666,18 @@ class PdfParser(BaseDocumentParser):
             # Cap the longest side: a large-format plan sheet at 150 DPI could
             # otherwise allocate a multi-GB pixmap.
             rect = pdf_doc[info.number - 1].rect
+            # Rect.width/.height have no return annotation in pymupdf 2.0, so
+            # PyCharm cannot infer a numeric type for them: Rect's coordinates
+            # are also assigned in the package from unannotated util_* helpers
+            # and untyped setter parameters, so PyCharm unifies them into a
+            # non-numeric union. They are floats at runtime; cast() is a
+            # static no-op that tells the analyzer that.
+            longest_side = cast(
+                float, max(rect.x1 - rect.x0, rect.y1 - rect.y0)
+            )
             scale = min(
                 PLACEHOLDER_PAGE_DPI / 72,
-                PLACEHOLDER_PAGE_MAX_PX / max(rect.width, rect.height),
+                PLACEHOLDER_PAGE_MAX_PX / longest_side,
             )
             pix = pdf_doc[info.number - 1].get_pixmap(
                 matrix=pymupdf.Matrix(scale, scale), alpha=False
@@ -694,7 +710,7 @@ class PdfParser(BaseDocumentParser):
         return ocr_text, rel_path
 
     def _save_rendered_image(
-        self, image, source_name: str, doc_hash: str, file_name: str
+        self, image: "Image.Image", source_name: str, doc_hash: str, file_name: str
     ) -> Optional[str]:
         """
         Saves a rendered (ink-cropped) page to the per-document images folder.
@@ -723,7 +739,12 @@ class PdfParser(BaseDocumentParser):
         pending_gap = False   # a blank page was seen after some content
         has_content = False
 
-        for i, page in enumerate(pdf_doc):
+        # pymupdf.Document (v2) is sequence-like only: __getitem__/__len__ are
+        # declared but __iter__ is not, so enumerate() violates the declared
+        # Iterable protocol. Iterate by explicit index - exactly what Python's
+        # legacy iteration protocol would do under the hood anyway.
+        for i in range(len(pdf_doc)):
+            page = pdf_doc[i]
             plain_text = page.get_text().strip()
             kind = self._classify_page(page, plain_text)
 
@@ -768,7 +789,10 @@ class PdfParser(BaseDocumentParser):
         itself, so off-white scans of empty pages are still recognized as blank.
         """
         r = page.rect
-        scale = min(40 / 72, CLASSIFY_MAX_PX / max(r.width, r.height))
+        # same Rect coordinate typing gap as in _recover_placeholder_page:
+        # cast() is a static no-op, the values are floats at runtime
+        longest_side = cast(float, max(r.x1 - r.x0, r.y1 - r.y0))
+        scale = min(40 / 72, CLASSIFY_MAX_PX / longest_side)
         pix = page.get_pixmap(
             matrix=pymupdf.Matrix(scale, scale),
             colorspace=pymupdf.csGRAY,
@@ -779,7 +803,9 @@ class PdfParser(BaseDocumentParser):
             return 0.0
 
         hist = Counter(samples)
-        background = max(hist, key=hist.get)
+        # a lambda, not hist.get: the bound method is overloaded and PyCharm
+        # cannot match it against max()'s key signature
+        background = max(hist, key=lambda k: hist[k])
         ink = sum(count for value, count in hist.items() if value < background - INK_DELTA)
         return ink / len(samples)
 
