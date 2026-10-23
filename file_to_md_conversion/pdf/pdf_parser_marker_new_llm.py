@@ -31,7 +31,8 @@ from base_parser import BaseDocumentParser
 
 logger = logging.getLogger(__name__)
 
-# --- Vision model for the second pass on pictures (from .env) ---
+# --- Vision model (VLM) for the second pass (from .env) ---
+# Used for pictures inside pages and for whole pages without a text layer;
 # OpenAI-compatible endpoint (e.g. LM Studio); see the SETTINGS block below.
 # load_dotenv() runs AFTER the torch/marker imports on purpose: they read
 # environment variables (CUDA_VISIBLE_DEVICES, OMP_NUM_THREADS, ...) at
@@ -46,16 +47,15 @@ LLM_MODEL = os.getenv("LLM_MODEL")
 # ======================================================================
 
 # --- Page classification ---
+# Two categories only: the page has a usable text layer (Marker path) or not.
+# Every "notext" page is rendered to a PNG, cropped to its ink region and sent
+# to the vision model, which decides what it is (see the VLM sections below).
 MIN_TEXT_CHARS = 20               # fewer characters in the text layer = "no real text"
-BLANK_INK_RATIO = 0.001           # share of "ink" pixels below which a page is blank
 INK_DELTA = 50                    # pixel is "ink" if darker than background by this much
-CLASSIFY_MAX_PX = 800             # longer side of the low-res render used for classification
+                                  # (used for the crop-to-ink of rendered pages)
 
-# --- OCR noise filter (OCR on plans/photos returns garbage) ---
-MIN_OCR_LETTER_RATIO = 0.4        # letters / non-space characters
-
-# --- Pages without extractable text (plans, drawings, photos, stamps) ---
-INCLUDE_NON_TEXT_PAGES = True     # keep them as a short placeholder Document
+# --- Pages the VLM decides are a drawing/image (plans, drawings, photos) ---
+INCLUDE_NON_TEXT_PAGES = True     # keep them in the output as an [IMAGE: ...] marker
 NON_TEXT_PLACEHOLDER = "[No text on page: drawing, plan or image]"
 
 # --- Images / figures detected by Marker ---
@@ -91,16 +91,21 @@ OCR_TEXT_LABEL = "[Text recognized from the image]"
 PIC_OCR_MIN_LETTERS = 6
 PIC_OCR_LETTER_RATIO = 0.3
 
-# --- Placeholder pages where Marker detected no picture ---
-# A scanned fragment that Marker treats as a scan (not a Picture/Figure)
-# leaves no image behind, and when its OCR comes back as noise the page
-# would become a bare placeholder with nothing saved. For such pages the
-# page content is taken at the best available quality - the embedded scan
-# at its native resolution if the page holds one, otherwise a PyMuPDF
-# render - and cropped to its ink region: the VLM pass is run on the
-# crop (the text fills the frame, so it reads much better) and the crop is
-# saved to the images folder, so the drawing/plan is not lost.
-OCR_PLACEHOLDER_PAGES = True          # VLM pass on the ink crop
+# --- VLM decision on whole pages without a text layer ---
+# Every "notext" page is rendered, cropped to its ink region and sent to the
+# VLM, which answers exactly EMPTY, exactly IMAGE, or the transcribed text as
+# Markdown. The sentinels are parsed strictly (case-insensitive exact match
+# after trimming) - any other answer is treated as the transcribed text.
+VLM_PAGE_EMPTY = "EMPTY"          # answer: the page has no usable content
+VLM_PAGE_IMAGE = "IMAGE"          # answer: drawing / plan / diagram / photo
+
+# --- Page render for the VLM page decision ---
+# Every page without a text layer is rendered with PyMuPDF at the resolution
+# below and cropped to its ink region before the VLM call (the content fills
+# the frame, so the model reads it much better). The crop is saved to the
+# images folder for every non-EMPTY decision, so a drawing/plan is never lost
+# from the output.
+OCR_PLACEHOLDER_PAGES = True          # run the VLM pass on the ink crop
 SAVE_PLACEHOLDER_PAGE_IMAGES = True   # save the ink crop as a PNG
 PLACEHOLDER_PAGE_DPI = 150            # render resolution of the page
 PLACEHOLDER_PAGE_MAX_PX = 3000        # longest side cap (px) of that render
@@ -110,8 +115,9 @@ PLACEHOLDER_PAGE_MAX_PX = 3000        # longest side cap (px) of that render
 class PageInfo:
     """Result of the page analysis (1-based page number)."""
     number: int
-    kind: str            # 'text' | 'scan' | 'drawing' | 'blank'
-    section_index: int   # index of the stitched document (blank pages = boundaries)
+    kind: str            # 'text' | 'notext' (no usable text layer)
+    section_index: int   # index of the stitched document (VLM-confirmed empty
+                         # pages = boundaries; assigned after the VLM pass)
     plain_text: str      # text layer from PyMuPDF (fallback for Marker)
 
 
@@ -123,17 +129,17 @@ class PdfParser(BaseDocumentParser):
     Requires GPU acceleration for acceptable performance.
 
     Steps:
-    1. Classify every page: text | scan | drawing | blank.
+    1. Classify every page: text (usable text layer) | notext.
     2. Convert the whole file with Marker (page numbers match the original file).
     3. Build one Document per page:
-       - text    -> Marker output (fallback: PyMuPDF text layer),
-       - scan    -> Marker OCR output, noise-filtered,
-       - drawing -> placeholder (plan / image without text); as a last
-                    resort the page is rendered and cropped to ink, the VLM
-                    pass is tried on the crop, and the crop is saved to the
-                    images folder so the drawing is not lost,
-       - blank   -> skipped; blank pages also mark a boundary between documents
-                    (metadata["section_index"]).
+       - text   -> Marker output (fallback: PyMuPDF text layer),
+       - notext -> the page is rendered to a PNG, cropped to its ink region
+                   and sent to the vision model (VLM), which decides what it
+                   is: EMPTY -> skipped (VLM-confirmed empty pages mark the
+                   boundary between stitched documents,
+                   metadata["section_index"]); IMAGE -> the saved page render
+                   becomes the content as an [IMAGE: ...] marker; text ->
+                   the page transcribed as Markdown.
     """
 
     # Surya models are heavy (VRAM) - load them once per process
@@ -189,6 +195,28 @@ class PdfParser(BaseDocumentParser):
         "- If the image contains no readable text, output exactly: EMPTY"
     )
 
+    # Prompt for the VLM pass over a whole page without a text layer: the
+    # model decides what the page is. Exactly EMPTY -> nothing usable on the
+    # page (it is skipped and marks a section boundary); exactly IMAGE -> a
+    # drawing/plan/diagram/photo (the saved page render becomes the content);
+    # anything else -> the transcribed text as clean Markdown.
+    _VLM_PAGE_PROMPT = (
+        "You are an expert document analysis assistant. Look at this PDF page "
+        "image and decide what it contains.\n"
+        "- If the page is empty, or contains no usable document content "
+        "(only blank space, borders or unreadable marks), output exactly: EMPTY\n"
+        "- If the page is a drawing, floor plan, technical plan, diagram, map, "
+        "chart or photo with no document text to transcribe, output exactly: IMAGE\n"
+        "- Otherwise transcribe ALL the text exactly as it appears and output "
+        "it as clean Markdown.\n"
+        "Transcription rules:\n"
+        "- Keep the original language of the document - do not translate.\n"
+        "- Preserve headings (#, ##, ...), lists and paragraph structure.\n"
+        "- Convert tables to Markdown tables.\n"
+        "- Do not add any conversational filler, explanations or comments.\n"
+        "- Do not wrap the answer in code fences."
+    )
+
     def __init__(self, languages: str = "pl,en", images_dir: str = IMAGES_DIR):
         """
         Args:
@@ -212,9 +240,10 @@ class PdfParser(BaseDocumentParser):
             artifact_dict=self.models,
         )
 
-        # ── VLM for the second pass on pictures ─────────────────
-        # OpenAI-compatible vision model (e.g. LM Studio) from .env;
-        # without it the picture pass is disabled (logged at init).
+        # ── VLM for the second pass ─────────────────────────────
+        # OpenAI-compatible vision model (e.g. LM Studio) from .env; without
+        # it the VLM pass is disabled: pictures are not OCR'd and non-text
+        # pages become saved images/placeholders (logged at init).
         if LLM_BASE_URL and LLM_MODEL:
             self.vlm = ChatOpenAI(
                 base_url=LLM_BASE_URL,
@@ -229,7 +258,7 @@ class PdfParser(BaseDocumentParser):
             self.vlm = None
             logger.warning(
                 "LLM_BASE_URL / LLM_MODEL missing in .env - "
-                "the second pass on pictures (VLM) is disabled"
+                "the second pass (VLM: pictures and non-text pages) is disabled"
             )
 
         self.languages = languages
@@ -253,9 +282,10 @@ class PdfParser(BaseDocumentParser):
         **kwargs,
     ) -> List[Document]:
         """
-        Processes a PDF -> list of Documents (one Document per non-blank page).
-        Per-page problems degrade to placeholders; a conversion-level failure
-        (unreadable PDF, Marker/model error) is re-raised.
+        Processes a PDF -> list of Documents (one per page; VLM-confirmed
+        empty pages are skipped). Per-page problems degrade to placeholders;
+        a conversion-level failure (unreadable PDF, Marker/model error) is
+        re-raised.
         """
         source_name = self._get_source_name(file_source)
         temp_pdf_path = None
@@ -267,8 +297,11 @@ class PdfParser(BaseDocumentParser):
             pdf_doc = pymupdf.Document(stream=pdf_bytes, filetype="pdf")
             pages_info = self._analyze_pages(pdf_doc)
 
-            if all(p.kind == "blank" for p in pages_info):
-                logger.warning(f"All pages are blank in '{source_name}'")
+            # A file whose pages all lack a text layer is a valid scanned
+            # document - the VLM pass decides per page, so there is no early
+            # exit here (only a truly page-less file ends up empty).
+            if not pages_info:
+                logger.warning(f"No pages in '{source_name}'")
                 return []
 
             # ── 2. Write to a temporary file ─────────────────────
@@ -506,19 +539,18 @@ class PdfParser(BaseDocumentParser):
         except Exception:
             return image  # never let cropping break the OCR pass
 
-    def _vlm_picture(self, image) -> str:
+    def _vlm_invoke(self, image, prompt: str) -> str:
         """
-        Second pass on ONE picture via the vision model (LLM_* from .env): the
-        ink-cropped picture is sent to the VLM, which returns the recognized
-        text as Markdown. Returns "" for noise.
+        Sends ONE image to the vision model (LLM_* from .env) with the given
+        prompt and returns the cleaned answer as a plain string: code fence
+        removed, Markdown-image refs stripped. Returns "" when the VLM is not
+        configured or the call fails. No noise filtering here - each caller
+        applies its own thresholds (or sentinel parsing).
         """
-        image = self._crop_to_ink(image)  # small fragment on white -> text fills frame
-        width, height = image.size
-        if min(width, height) < OCR_PICTURE_MIN_PX:
-            return ""
         if self.vlm is None:
             return ""
         # A local VLM is slow on huge images - cap the longest side.
+        width, height = image.size
         if max(width, height) > VLM_MAX_PX:
             scale = VLM_MAX_PX / max(width, height)
             image = image.resize(
@@ -533,7 +565,7 @@ class PdfParser(BaseDocumentParser):
 
             message = HumanMessage(
                 content=[
-                    {"type": "text", "text": self._VLM_PROMPT},
+                    {"type": "text", "text": prompt},
                     {
                         "type": "image_url",
                         "image_url": {"url": f"data:image/png;base64,{img_base64}"},
@@ -547,22 +579,38 @@ class PdfParser(BaseDocumentParser):
 
             text = self._extract_vlm_text(response.content)
             text = self._strip_code_fence(text)
-            text = self._MD_IMAGE_RE.sub("", text).strip()
-
-            compact = re.sub(r"\s", "", text)
-            letters = sum(ch.isalpha() for ch in compact)
-            if letters < PIC_OCR_MIN_LETTERS or letters / max(len(compact), 1) < PIC_OCR_LETTER_RATIO:
-                # The model produced something but it looked like noise - keep
-                # the raw output in the log so a failing page can be diagnosed
-                logger.info(
-                    f"Picture VLM rejected as noise (letters={letters}, "
-                    f"compact={len(compact)}): {text[:150]!r}"
-                )
-                return ""
-            return text
+            return self._MD_IMAGE_RE.sub("", text).strip()
         except Exception as e:
-            logger.warning(f"Picture VLM failed: {e}")
+            logger.warning(f"VLM call failed: {e}")
             return ""
+
+    def _vlm_picture(self, image) -> str:
+        """
+        Second pass on ONE picture via the vision model (LLM_* from .env): the
+        ink-cropped picture is sent to the VLM, which returns the recognized
+        text as Markdown. Returns "" for noise.
+        """
+        image = self._crop_to_ink(image)  # small fragment on white -> text fills frame
+        width, height = image.size
+        if min(width, height) < OCR_PICTURE_MIN_PX:
+            return ""
+        if self.vlm is None:
+            return ""
+        text = self._vlm_invoke(image, self._VLM_PROMPT)
+        if not text:
+            return ""
+        compact = re.sub(r"\s", "", text)
+        letters = sum(ch.isalpha() for ch in compact)
+        if letters < PIC_OCR_MIN_LETTERS or letters / max(len(compact), 1) < PIC_OCR_LETTER_RATIO:
+            # The model produced something but it looked like noise (the EMPTY
+            # sentinel is caught here as well) - keep the raw output in the log
+            # so a failing page can be diagnosed
+            logger.info(
+                f"Picture VLM rejected as noise (letters={letters}, "
+                f"compact={len(compact)}): {text[:150]!r}"
+            )
+            return ""
+        return text
 
     @staticmethod
     def _extract_vlm_text(content) -> str:
@@ -632,25 +680,29 @@ class PdfParser(BaseDocumentParser):
 
         return self._MD_IMAGE_REF_RE.sub(_replace, md_text)
 
-    def _recover_placeholder_page(
+    def _vlm_page(
         self,
         pdf_doc: Optional["pymupdf.Document"],
         info: PageInfo,
         source_name: str,
         doc_hash: Optional[str],
-    ) -> Tuple[str, Optional[str]]:
+    ) -> Tuple[str, str, Optional[str]]:
         """
-        Last resort for a page that is about to become a non-text placeholder
-        but on which Marker detected no picture: a scanned fragment (e.g. a
-        quarter page, slightly skewed) that Marker treated as a scan and whose
-        OCR came back as noise. Renders the page with PyMuPDF and crops it to
-        ink. Returns (ocr_text, saved_image_path): the VLM pass is
-        tried on the crop (the text fills the frame, so it reads much better)
-        and the crop is saved to the images folder, so the drawing/plan is not
-        lost.
+        VLM decision for ONE page without a text layer: the page is rendered
+        with PyMuPDF, cropped to its ink region and sent to the vision model,
+        which answers exactly "EMPTY" (nothing usable on the page), exactly
+        "IMAGE" (a drawing/plan/diagram/photo) or the transcribed text as
+        Markdown (strict parsing: anything else is treated as the text).
+        The ink crop is saved to the images folder for every non-EMPTY
+        decision (gated by SAVE_PLACEHOLDER_PAGE_IMAGES), so a drawing/plan is
+        never lost from the output.
+        Returns (decision, text, saved_image_path): decision is "empty",
+        "image" or "text"; text is the Markdown for decision "text" (""
+        otherwise); saved_image_path is the relative path of the saved crop
+        (None for "empty" or when saving is off/failed).
         """
         if pdf_doc is None or not doc_hash:
-            return "", None
+            return "image", "", None
         try:
             # Cap the longest side: a large-format plan sheet at 150 DPI could
             # otherwise allocate a multi-GB pixmap.
@@ -667,27 +719,41 @@ class PdfParser(BaseDocumentParser):
             image = self._crop_to_ink(image)
         except Exception as e:
             logger.warning(f"[p{info.number}] page render failed ({source_name}): {e}")
-            return "", None
+            return "image", "", None
 
-        ocr_text = self._vlm_picture(image) if OCR_PLACEHOLDER_PAGES else ""
-        if ocr_text:
-            logger.info(
-                f"[p{info.number}] recovered {len(ocr_text)} chars via cropped page VLM ({source_name})"
+        raw = self._vlm_invoke(image, self._VLM_PAGE_PROMPT) if OCR_PLACEHOLDER_PAGES else ""
+        # Strict sentinel parse: only an exact (case-insensitive, trimmed)
+        # EMPTY / IMAGE answer counts as a decision - any longer answer is the
+        # transcribed text.
+        sentinel = raw.strip().upper()
+        if sentinel == VLM_PAGE_EMPTY:
+            logger.info(f"[p{info.number}] page VLM: EMPTY ({source_name})")
+            return "empty", "", None
+        if sentinel == VLM_PAGE_IMAGE:
+            logger.info(f"[p{info.number}] page VLM: IMAGE ({source_name})")
+            rel_path = self._save_rendered_image(
+                image, source_name, doc_hash, f"page_{info.number:03d}.png"
             )
-        else:
-            # The sizes show which step failed: render == crop means the ink
-            # touches the frame (nothing to crop, the fragment still floats in
-            # white space); a small crop with no text means the VLM could not
-            # read it (check the saved page_NNN.png).
+            return "image", "", rel_path
+        if not raw:
+            # VLM disabled, unavailable or the call failed: keep the page as
+            # an image with the saved render, so nothing is lost. The sizes
+            # show which step to check (render == crop means the ink touches
+            # the frame; a small crop means a sparse page - see page_NNN.png).
             logger.warning(
-                f"[p{info.number}] cropped page VLM returned no text "
+                f"[p{info.number}] page VLM produced no decision "
                 f"(render={render_size[0]}x{render_size[1]} -> "
                 f"crop={image.size[0]}x{image.size[1]}) ({source_name})"
             )
+            rel_path = self._save_rendered_image(
+                image, source_name, doc_hash, f"page_{info.number:03d}.png"
+            )
+            return "image", "", rel_path
+        logger.info(f"[p{info.number}] page VLM: text, {len(raw)} chars ({source_name})")
         rel_path = self._save_rendered_image(
             image, source_name, doc_hash, f"page_{info.number:03d}.png"
         )
-        return ocr_text, rel_path
+        return "text", raw, rel_path
 
     def _save_rendered_image(
         self, image, source_name: str, doc_hash: str, file_name: str
@@ -709,90 +775,36 @@ class PdfParser(BaseDocumentParser):
             return None
 
     # ══════════════════════════════════════════════════════════════
-    # PAGE ANALYSIS (classification + section boundaries)
+    # PAGE ANALYSIS (classification)
     # ══════════════════════════════════════════════════════════════
 
     def _analyze_pages(self, pdf_doc: "pymupdf.Document") -> List[PageInfo]:
-        """Classifies every page and assigns section_index (blank pages = boundaries)."""
+        """
+        Classifies every page as 'text' (usable text layer) or 'notext'.
+        section_index is assigned later, in _build_documents, once the VLM
+        has confirmed which notext pages are truly empty (those mark the
+        boundaries between the stitched documents).
+        """
         result: List[PageInfo] = []
-        section_index = 0
-        pending_gap = False   # a blank page was seen after some content
-        has_content = False
-
         for i, page in enumerate(pdf_doc):
             plain_text = page.get_text().strip()
-            kind = self._classify_page(page, plain_text)
-
-            if kind == "blank":
-                if has_content:
-                    pending_gap = True
-            else:
-                # First content page after a gap -> new stitched document
-                if pending_gap:
-                    section_index += 1
-                    pending_gap = False
-                has_content = True
-
             result.append(
                 PageInfo(
                     number=i + 1,
-                    kind=kind,
-                    section_index=section_index,
+                    kind=self._classify_page(plain_text),
+                    section_index=0,
                     plain_text=plain_text,
                 )
             )
 
         counts = Counter(p.kind for p in result)
-        logger.info(f"Page classification: {dict(counts)}, sections: {section_index + 1}")
+        logger.info(f"Page classification: {dict(counts)}")
         return result
 
-    def _classify_page(self, page: "pymupdf.Page", plain_text: str) -> str:
-        """Returns 'text' | 'scan' | 'drawing' | 'blank'."""
-        if len(plain_text) >= MIN_TEXT_CHARS:
-            return "text"
-
-        if self._ink_ratio(page) < BLANK_INK_RATIO:
-            return "blank"  # truly empty page or a scan of an empty page
-
-        return "scan" if page.get_images(full=True) else "drawing"
-
     @staticmethod
-    def _ink_ratio(page: "pymupdf.Page") -> float:
-        """
-        Share of 'ink' pixels in a low-resolution render. Works for images and
-        vector graphics alike. The background level is estimated from the page
-        itself, so off-white scans of empty pages are still recognized as blank.
-        """
-        r = page.rect
-        scale = min(40 / 72, CLASSIFY_MAX_PX / max(r.width, r.height))
-        pix = page.get_pixmap(
-            matrix=pymupdf.Matrix(scale, scale),
-            colorspace=pymupdf.csGRAY,
-            alpha=False,
-        )
-        samples = pix.samples
-        if not samples:
-            return 0.0
-
-        hist = Counter(samples)
-        background = max(hist, key=hist.get)
-        ink = sum(count for value, count in hist.items() if value < background - INK_DELTA)
-        return ink / len(samples)
-
-    @staticmethod
-    def _is_noise(text: str) -> bool:
-        """True if OCR output looks like garbage (typical for plans and photos)."""
-        compact = re.sub(r"\s", "", text or "")
-        if not compact:
-            return True
-        letters = sum(ch.isalpha() for ch in compact)
-        if letters < 3:
-            return True
-        # Short fragments are judged only by the number of letters; the
-        # letter/character ratio is applied only to longer text
-        if len(compact) < 60:
-            return False
-        return letters / len(compact) < MIN_OCR_LETTER_RATIO
+    def _classify_page(plain_text: str) -> str:
+        """Returns 'text' when the page has a usable text layer, else 'notext'."""
+        return "text" if len(plain_text) >= MIN_TEXT_CHARS else "notext"
 
     # ══════════════════════════════════════════════════════════════
     # BUILDING DOCUMENTS
@@ -838,10 +850,17 @@ class PdfParser(BaseDocumentParser):
         pdf_doc: Optional["pymupdf.Document"] = None,
         doc_hash: str = "",
     ) -> List[Document]:
-        """Combines Marker output with the page analysis into one Document per page."""
-        documents: List[Document] = []
-        blank_pages: List[int] = []
-        non_text_pages: List[int] = []
+        """
+        Combines Marker output with the page analysis into one Document per
+        page:
+        - 'text' pages   -> Marker output (fallback: PyMuPDF text layer),
+        - 'notext' pages -> decided by the VLM on the rendered page (see
+          _vlm_page): empty (skipped, section boundary), image (the saved
+          page render becomes the content) or text (VLM transcription).
+        """
+        built: List[Tuple[PageInfo, Document]] = []
+        empty_pages: List[int] = []
+        image_pages: List[int] = []
         failed_pages: List[int] = []
         total_pages = len(pages_info)
         # Lines repeated on 2+ pages (headers, footers, watermarks) inflate the
@@ -855,19 +874,14 @@ class PdfParser(BaseDocumentParser):
                     line_counts[line] += 1
 
         for info in pages_info:
-            if info.kind == "blank":
-                blank_pages.append(info.number)
-                continue
-
-            text = marker_pages.get(info.number, "")
-            raw_marker_text = text  # still contains the "![](...)" references
-            page_type = info.kind
-            method = "marker"
-            # Images Marker detected on this page (computed early: the
-            # placeholder recovery below may add its saved page render)
-            page_image_paths = self._image_paths(raw_marker_text, image_map)
-
             if info.kind == "text":
+                text = marker_pages.get(info.number, "")
+                raw_marker_text = text  # still contains the "![](...)" references
+                page_type = "text"
+                method = "marker"
+                # Images Marker detected on this page
+                page_image_paths = self._image_paths(raw_marker_text, image_map)
+
                 visible = self._MD_IMAGE_RE.sub("", text).strip()
                 # Plain layer WITHOUT lines repeated on 2+ pages (headers,
                 # footers, watermarks), which would otherwise inflate it and
@@ -883,56 +897,44 @@ class PdfParser(BaseDocumentParser):
                 if plain_effective and len(visible) < 0.5 * plain_effective:
                     text = info.plain_text
                     method = "pymupdf-text"
-                # FIX: this branch is currently unreachable in practice, because
-                # info.kind == "text" implies len(info.plain_text) >= MIN_TEXT_CHARS
-                # (see _classify_page), so `text` can never be empty here at this
-                # point. Left in place defensively in case the classification
-                # logic above changes in the future (e.g. MIN_TEXT_CHARS tuning,
-                # or plain_text consisting only of whitespace/control characters).
                 if not text:
                     failed_pages.append(info.number)
                     continue
-            else:  # 'scan' or 'drawing'
-                without_images = self._MD_IMAGE_RE.sub("", text).strip()
-                if self._is_noise(without_images):
-                    text = info.plain_text  # whatever short text exists, may be empty
-                    method = "pymupdf-text"
-                    page_type = "drawing"
-
-            # FIX: previously this only checked `if not text:`, so a short,
-            # noisy PyMuPDF fallback (1-19 chars of garbage, e.g. a stray
-            # scan artifact) could slip through as "real" content without a
-            # placeholder. Now we also re-check _is_noise() on the fallback
-            # text itself.
-            if not text or (info.kind != "text" and self._is_noise(text)):
-                logger.warning(
-                    f"[p{info.number}] placeholder: kind={info.kind} "
-                    f"plain={len(info.plain_text)} discarded={text[:200]!r}"
-                )
-                # Marker treated the page as a scan, its OCR came back as
-                # noise, and no picture block was detected - the drawing/plan
-                # would be lost entirely. Render the page and crop it to ink:
-                # try the second OCR pass on the crop and save the crop.
-                fallback_text, rel_path = self._recover_placeholder_page(
+            else:  # 'notext': no usable text layer - the VLM decides
+                decision, vlm_text, rel_path = self._vlm_page(
                     pdf_doc, info, source_name, doc_hash
                 )
-                if rel_path:
-                    page_image_paths.append(rel_path)
-                if fallback_text:
-                    text = f"{OCR_TEXT_LABEL}\n{fallback_text}"
+                if decision == "empty":
+                    logger.info(
+                        f"[p{info.number}/{total_pages}] done: type=empty "
+                        f"(VLM-confirmed, no usable content)"
+                    )
+                    empty_pages.append(info.number)
+                    continue
+                page_image_paths = [rel_path] if rel_path else []
+                if decision == "text":
+                    page_type = "scan"
                     method = "vlm-page"
+                    text = f"{OCR_TEXT_LABEL}\n{vlm_text}"
+                elif INCLUDE_NON_TEXT_PAGES:
+                    page_type = "drawing"
+                    method = "image" if rel_path else "placeholder"
+                    text = self._image_marker(rel_path) if rel_path else NON_TEXT_PLACEHOLDER
+                    image_pages.append(info.number)
                 else:
-                    non_text_pages.append(info.number)
-                    if not INCLUDE_NON_TEXT_PAGES:
-                        continue
-                    text = NON_TEXT_PLACEHOLDER
-                    method = "placeholder"
+                    # Flag off: drawing/image pages are dropped from the output
+                    logger.info(
+                        f"[p{info.number}/{total_pages}] done: type=drawing "
+                        f"(INCLUDE_NON_TEXT_PAGES=False, skipped)"
+                    )
+                    continue
 
             if method == "marker":
                 text = self._apply_images(text, image_map)
-            elif page_image_paths:
-                # Text came from PyMuPDF or is the placeholder: the Marker text
-                # with the references was not used, so append the markers
+            elif method in ("pymupdf-text", "vlm-page") and page_image_paths:
+                # Text came from the PyMuPDF layer or from the VLM page pass:
+                # append the saved images (Marker references / the page render)
+                # so the drawings/scans behind the text are not lost
                 text = text + "\n\n" + "\n".join(self._image_marker(p) for p in page_image_paths)
 
             metadata = self._base_metadata(source_name)
@@ -940,7 +942,6 @@ class PdfParser(BaseDocumentParser):
                 {
                     "page_number": info.number,
                     "page_type": page_type,
-                    "section_index": info.section_index,
                     "extraction_method": method,
                 }
             )
@@ -952,14 +953,34 @@ class PdfParser(BaseDocumentParser):
                 f"[p{info.number}/{total_pages}] done: type={page_type} "
                 f"method={method} chars={len(text)}"
             )
-            documents.append(Document(page_content=text, metadata=metadata))
+            built.append((info, Document(page_content=text, metadata=metadata)))
 
-        if blank_pages:
-            logger.info(f"Skipped blank pages {blank_pages} ({source_name})")
-        if non_text_pages:
-            logger.info(f"Pages without extractable text (plans/images) {non_text_pages} ({source_name})")
+        # Section boundaries, decided only now that the VLM has confirmed
+        # which pages are truly empty: the first content page after one or
+        # more empty pages starts a new stitched document.
+        empty_set = set(empty_pages)
+        section_index = 0
+        pending_gap = False
+        for info in pages_info:
+            if info.number in empty_set:
+                pending_gap = True
+            elif pending_gap:
+                section_index += 1
+                pending_gap = False
+            info.section_index = section_index
+
+        documents: List[Document] = []
+        for info, document in built:
+            document.metadata["section_index"] = info.section_index
+            documents.append(document)
+
+        if empty_pages:
+            logger.info(f"Skipped empty pages (VLM-confirmed) {empty_pages} ({source_name})")
+        if image_pages:
+            logger.info(f"Image pages (drawings/plans) {image_pages} ({source_name})")
         if failed_pages:
             logger.warning(f"No text from pages {failed_pages} ({source_name})")
+        logger.info(f"Sections: {section_index + 1} ({source_name})")
 
         return documents
 

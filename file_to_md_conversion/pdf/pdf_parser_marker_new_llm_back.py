@@ -33,6 +33,10 @@ logger = logging.getLogger(__name__)
 
 # --- Vision model for the second pass on pictures (from .env) ---
 # OpenAI-compatible endpoint (e.g. LM Studio); see the SETTINGS block below.
+# load_dotenv() runs AFTER the torch/marker imports on purpose: they read
+# environment variables (CUDA_VISIBLE_DEVICES, OMP_NUM_THREADS, ...) at
+# import time, so .env must not leak into them.
+
 LLM_BASE_URL = os.getenv("LLM_BASE_URL")
 LLM_API_KEY = os.getenv("LLM_API_KEY")
 LLM_MODEL = os.getenv("LLM_MODEL")
@@ -59,7 +63,7 @@ NON_TEXT_PLACEHOLDER = "[No text on page: drawing, plan or image]"
 #   <IMAGES_DIR>/<document name>_<hash>/<marker file name>
 # and the reference in the Markdown is replaced with a marker built from
 # IMAGE_MARKER_TEMPLATE ({path} = relative path, {name} = file name).
-# Markdown-image variant: IMAGE_MARKER_TEMPLATE = "![OBRAZ {name}]({path})"
+# Markdown-image variant: IMAGE_MARKER_TEMPLATE = "![IMAGE {name}]({path})"
 SAVE_IMAGES = True
 IMAGES_DIR = "img"
 IMAGE_MARKER_TEMPLATE = "[IMAGE: {path}]"
@@ -80,6 +84,7 @@ OCR_PICTURES = True
 OCR_PICTURE_MIN_PX = 150          # pictures with a shorter side are skipped
 OCR_PICTURES_MAX_PER_DOC = 50     # safety limit of extra VLM calls per file
 VLM_MAX_TOKENS = 2000             # max length of the Markdown the model may return
+VLM_MAX_PX = 2000                 # longest side (px) of the image sent to the VLM
 OCR_TEXT_LABEL = "[Text recognized from the image]"
 # The second pass often reads slightly-skewed scans imperfectly, so it uses
 # its own, more forgiving noise thresholds than the main OCR filter above.
@@ -98,6 +103,7 @@ PIC_OCR_LETTER_RATIO = 0.3
 OCR_PLACEHOLDER_PAGES = True          # VLM pass on the ink crop
 SAVE_PLACEHOLDER_PAGE_IMAGES = True   # save the ink crop as a PNG
 PLACEHOLDER_PAGE_DPI = 150            # render resolution of the page
+PLACEHOLDER_PAGE_MAX_PX = 3000        # longest side cap (px) of that render
 
 
 @dataclass
@@ -152,6 +158,15 @@ class PdfParser(BaseDocumentParser):
     # plus a space, e.g. "1. a. txt" or "1. a) txt". Group 1 = leading indent,
     # group 2 = the letter, group 3 = the original delimiter ("." or ")").
     _LIST_DOUBLE_MARKER_RE = re.compile(r"^(\s*)\d+\.\s+([a-z])([.)])(?=\s)", re.MULTILINE)
+
+    # A numbered item duplicated by Marker: the source already prints the
+    # numbering and Marker adds its own ordered-list marker in front, so the
+    # line starts with "1. 1." - the number, then the SAME number again after
+    # an unknown run of spaces/tabs. Group 1 = leading indent, group 2 = the
+    # number. The backreference keeps only true duplicates ("1. 2." is left
+    # alone), the lookahead keeps section refs like "1. 1.1", and the trailing
+    # [ \t]* is consumed so the replacement yields a single, clean space.
+    _NUM_DOUBLE_MARKER_RE = re.compile(r"^(\s*)(\d+)\.[ \t]+\2\.(?=[ \t]|$)[ \t]*", re.MULTILINE)
 
     # A code fence some models wrap the whole answer in ("```markdown ... ```")
     _CODE_FENCE_RE = re.compile(r"^```[^\n]*\n(.*?)\n?```\s*$", re.DOTALL)
@@ -239,6 +254,8 @@ class PdfParser(BaseDocumentParser):
     ) -> List[Document]:
         """
         Processes a PDF -> list of Documents (one Document per non-blank page).
+        Per-page problems degrade to placeholders; a conversion-level failure
+        (unreadable PDF, Marker/model error) is re-raised.
         """
         source_name = self._get_source_name(file_source)
         temp_pdf_path = None
@@ -267,14 +284,21 @@ class PdfParser(BaseDocumentParser):
             with self._convert_lock:
                 rendered = self.converter(temp_pdf_path)
             md_text = (rendered.markdown or "").strip()
-            # Second pass on pictures via the VLM (e.g. a scanned fragment pasted into a page)
-            md_text = self._inject_picture_ocr(md_text, getattr(rendered, "images", None))
             # Pictures/figures detected by Marker -> files in images_dir.
             # The Markdown still holds the raw "![](...)" references at this
             # point; they are replaced later, when the documents are built
             # (the page logic needs to see them to detect image-only pages).
+            # Saving runs BEFORE the VLM pass so the second pass only sees
+            # pictures that will actually be referenced in the output.
+            # The hash is computed once and reused for the images folder.
+            doc_hash = hashlib.sha1(pdf_bytes).hexdigest()[:8]
             image_map = self._save_images(
-                getattr(rendered, "images", None), source_name, pdf_bytes
+                getattr(rendered, "images", None), source_name, doc_hash
+            )
+            # Second pass on pictures via the VLM (e.g. a scanned fragment pasted into a page)
+            md_text = self._inject_picture_ocr(
+                md_text, getattr(rendered, "images", None), image_map,
+                total_pages=len(pages_info),
             )
             logger.info(f"Conversion finished: {source_name}")
 
@@ -310,7 +334,7 @@ class PdfParser(BaseDocumentParser):
                     )
                 documents = self._build_documents(
                     marker_pages, pages_info, source_name, image_map,
-                    pdf_doc=pdf_doc, pdf_bytes=pdf_bytes,
+                    pdf_doc=pdf_doc, doc_hash=doc_hash,
                 )
 
             if not documents:
@@ -320,19 +344,30 @@ class PdfParser(BaseDocumentParser):
             return documents
 
         except Exception as e:
+            # Re-raise: a total failure (corrupt PDF, Marker OOM, model load
+            # error) must not look like a genuinely empty document - callers
+            # (e.g. the benchmark driver) catch per-file errors themselves.
             logger.error(f"Marker error ({source_name}): {e}", exc_info=True)
-            return []
+            raise
 
         finally:
+            # Cleanup must never mask the result or the exception above: on
+            # Windows a fresh temp file is often still locked by antivirus.
             if pdf_doc is not None:
-                pdf_doc.close()
-
-            # Temporary file cleanup
+                try:
+                    pdf_doc.close()
+                except Exception as e:
+                    logger.warning(f"Could not close PDF document: {e}")
             if temp_pdf_path and os.path.exists(temp_pdf_path):
-                os.remove(temp_pdf_path)
-
+                try:
+                    os.remove(temp_pdf_path)
+                except OSError as e:
+                    logger.warning(f"Could not remove temp file '{temp_pdf_path}': {e}")
             # Free VRAM
-            self._cleanup_gpu()
+            try:
+                self._cleanup_gpu()
+            except Exception as e:
+                logger.warning(f"GPU cleanup failed: {e}")
 
     def diagnostics(self) -> Dict[str, str]:
         """Diagnostic information for Marker."""
@@ -370,10 +405,14 @@ class PdfParser(BaseDocumentParser):
         match = cls._IMAGE_PAGE_RE.search(name)
         return int(match.group(1)) + 1 if match else None
 
-    def _images_folder(self, source_name: str, pdf_bytes: bytes) -> str:
-        """Per-document images folder <images_dir>/<stem>_<hash8>, created."""
+    def _images_folder(self, source_name: str, doc_hash: str) -> str:
+        """Per-document images folder <images_dir>/<stem>_<hash8>, created.
+
+        doc_hash is the 8-char prefix of SHA-1 over the whole PDF, computed
+        ONCE in parse() (hashing a large file per call would be wasteful).
+        """
         stem = re.sub(r"[^\w.-]+", "_", os.path.splitext(source_name)[0]).strip("._") or "document"
-        folder = f"{stem}_{hashlib.sha1(pdf_bytes).hexdigest()[:8]}"
+        folder = f"{stem}_{doc_hash}"
         target_dir = os.path.join(self.images_dir, folder)
         os.makedirs(target_dir, exist_ok=True)
         return target_dir
@@ -382,7 +421,7 @@ class PdfParser(BaseDocumentParser):
         self,
         images: Optional[Dict[str, object]],
         source_name: str,
-        pdf_bytes: bytes,
+        doc_hash: str,
     ) -> Dict[str, str]:
         """
         Saves Marker's images (PIL) to <images_dir>/<document>_<hash>/.
@@ -391,7 +430,7 @@ class PdfParser(BaseDocumentParser):
         if not SAVE_IMAGES or not images:
             return {}
 
-        target_dir = self._images_folder(source_name, pdf_bytes)
+        target_dir = self._images_folder(source_name, doc_hash)
         folder = os.path.basename(target_dir)
 
         image_map: Dict[str, str] = {}
@@ -479,6 +518,13 @@ class PdfParser(BaseDocumentParser):
             return ""
         if self.vlm is None:
             return ""
+        # A local VLM is slow on huge images - cap the longest side.
+        if max(width, height) > VLM_MAX_PX:
+            scale = VLM_MAX_PX / max(width, height)
+            image = image.resize(
+                (max(1, int(width * scale)), max(1, int(height * scale))),
+                Image.LANCZOS,
+            )
 
         try:
             buf = io.BytesIO()
@@ -537,19 +583,36 @@ class PdfParser(BaseDocumentParser):
         match = cls._CODE_FENCE_RE.match(text)
         return match.group(1).strip() if match else text
 
-    def _inject_picture_ocr(self, md_text: str, images: Optional[Dict[str, object]]) -> str:
+    def _inject_picture_ocr(
+        self,
+        md_text: str,
+        images: Optional[Dict[str, object]],
+        image_map: Optional[Dict[str, str]] = None,
+        total_pages: Optional[int] = None,
+    ) -> str:
         """
         Puts the text recognized in pictures right after their '![](file)'
         references. Done on the raw Marker Markdown, BEFORE the page logic, so a
         page whose only content is such a picture is no longer treated as empty.
+        Only pictures that are referenced in the Markdown AND actually saved
+        (image_map) are sent to the VLM - anything else would waste the
+        serialized inference slot and/or leave an orphaned text block.
         """
         if not OCR_PICTURES or self.vlm is None or not images or not md_text:
             return md_text
 
+        image_map = image_map or {}
+        referenced = set(self._MD_IMAGE_REF_RE.findall(md_text))
         ocr_by_name: Dict[str, str] = {}
-        candidates = list(images.items())[:OCR_PICTURES_MAX_PER_DOC]
+        candidates = [
+            (name, image)
+            for name, image in images.items()
+            if name in referenced and name in image_map
+        ][:OCR_PICTURES_MAX_PER_DOC]
         for idx, (name, image) in enumerate(candidates):
             page_no = self._image_page_number(name)
+            if page_no is not None and total_pages and not 1 <= page_no <= total_pages:
+                page_no = None  # name no longer matches this file - don't mislabel
             prefix = f"[p{page_no}] " if page_no else ""
             logger.info(f"{prefix}Picture VLM {idx + 1}/{len(candidates)}: '{name}'")
             text = self._vlm_picture(image)
@@ -574,7 +637,7 @@ class PdfParser(BaseDocumentParser):
         pdf_doc: Optional["pymupdf.Document"],
         info: PageInfo,
         source_name: str,
-        pdf_bytes: Optional[bytes],
+        doc_hash: Optional[str],
     ) -> Tuple[str, Optional[str]]:
         """
         Last resort for a page that is about to become a non-text placeholder
@@ -586,11 +649,19 @@ class PdfParser(BaseDocumentParser):
         and the crop is saved to the images folder, so the drawing/plan is not
         lost.
         """
-        if pdf_doc is None or pdf_bytes is None:
+        if pdf_doc is None or not doc_hash:
             return "", None
         try:
-            mat = pymupdf.Matrix(PLACEHOLDER_PAGE_DPI / 72, PLACEHOLDER_PAGE_DPI / 72)
-            pix = pdf_doc[info.number - 1].get_pixmap(matrix=mat, alpha=False)
+            # Cap the longest side: a large-format plan sheet at 150 DPI could
+            # otherwise allocate a multi-GB pixmap.
+            rect = pdf_doc[info.number - 1].rect
+            scale = min(
+                PLACEHOLDER_PAGE_DPI / 72,
+                PLACEHOLDER_PAGE_MAX_PX / max(rect.width, rect.height),
+            )
+            pix = pdf_doc[info.number - 1].get_pixmap(
+                matrix=pymupdf.Matrix(scale, scale), alpha=False
+            )
             image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
             render_size = image.size
             image = self._crop_to_ink(image)
@@ -614,12 +685,12 @@ class PdfParser(BaseDocumentParser):
                 f"crop={image.size[0]}x{image.size[1]}) ({source_name})"
             )
         rel_path = self._save_rendered_image(
-            image, source_name, pdf_bytes, f"page_{info.number:03d}.png"
+            image, source_name, doc_hash, f"page_{info.number:03d}.png"
         )
         return ocr_text, rel_path
 
     def _save_rendered_image(
-        self, image, source_name: str, pdf_bytes: bytes, file_name: str
+        self, image, source_name: str, doc_hash: str, file_name: str
     ) -> Optional[str]:
         """
         Saves a rendered (ink-cropped) page to the per-document images folder.
@@ -628,7 +699,7 @@ class PdfParser(BaseDocumentParser):
         if not SAVE_PLACEHOLDER_PAGE_IMAGES:
             return None
         try:
-            target_dir = self._images_folder(source_name, pdf_bytes)
+            target_dir = self._images_folder(source_name, doc_hash)
             image.save(os.path.join(target_dir, file_name))
             return (
                 f"{self.images_dir}/{os.path.basename(target_dir)}/{file_name}"
@@ -747,10 +818,15 @@ class PdfParser(BaseDocumentParser):
 
     def _collapse_list_numbers(self, text: str) -> str:
         """
-        Removes the redundant outer numbering Marker adds in front of lettered
-        sub-list items ("1. a. txt" -> "a. txt", "1. a) txt" -> "a) txt"), so
-        the document's original a/b/c lettering is what remains.
+        Removes the redundant outer numbering Marker adds in front of items
+        that are already numbered in the source:
+        - numbered items: "1. 1. txt" -> "1. txt" (the duplicated number is
+          dropped, whatever the spaces/tabs between the two markers are),
+        - lettered sub-list items: "1. a. txt" -> "a. txt", "1. a) txt" ->
+          "a) txt", so the document's original a/b/c lettering remains.
         """
+        # Number pass first: "1. 1. a. txt" -> "1. a. txt" -> "a. txt"
+        text = self._NUM_DOUBLE_MARKER_RE.sub(r"\1\2. ", text)
         return self._LIST_DOUBLE_MARKER_RE.sub(r"\1\2\3", text)
 
     def _build_documents(
@@ -760,7 +836,7 @@ class PdfParser(BaseDocumentParser):
         source_name: str,
         image_map: Optional[Dict[str, str]] = None,
         pdf_doc: Optional["pymupdf.Document"] = None,
-        pdf_bytes: Optional[bytes] = None,
+        doc_hash: str = "",
     ) -> List[Document]:
         """Combines Marker output with the page analysis into one Document per page."""
         documents: List[Document] = []
@@ -768,6 +844,15 @@ class PdfParser(BaseDocumentParser):
         non_text_pages: List[int] = []
         failed_pages: List[int] = []
         total_pages = len(pages_info)
+        # Lines repeated on 2+ pages (headers, footers, watermarks) inflate the
+        # raw text layer and would wrongly trigger the PyMuPDF fallback below -
+        # the fallback compares against the layer without such lines.
+        line_counts = Counter()
+        for p in pages_info:
+            for line in p.plain_text.splitlines():
+                line = line.strip()
+                if line:
+                    line_counts[line] += 1
 
         for info in pages_info:
             if info.kind == "blank":
@@ -784,10 +869,18 @@ class PdfParser(BaseDocumentParser):
 
             if info.kind == "text":
                 visible = self._MD_IMAGE_RE.sub("", text).strip()
+                # Plain layer WITHOUT lines repeated on 2+ pages (headers,
+                # footers, watermarks), which would otherwise inflate it and
+                # trigger the fallback for a correct, shorter Marker output.
+                plain_effective = sum(
+                    len(line) + 1
+                    for line in info.plain_text.splitlines()
+                    if line.strip() and line_counts[line.strip()] == 1
+                )
                 # Fallback: text layer from PyMuPDF when Marker returned nothing
                 # or lost a large part of the text (e.g. a block classified as
                 # header/footer or as a picture)
-                if len(visible) < 0.5 * len(info.plain_text):
+                if plain_effective and len(visible) < 0.5 * plain_effective:
                     text = info.plain_text
                     method = "pymupdf-text"
                 # FIX: this branch is currently unreachable in practice, because
@@ -821,7 +914,7 @@ class PdfParser(BaseDocumentParser):
                 # would be lost entirely. Render the page and crop it to ink:
                 # try the second OCR pass on the crop and save the crop.
                 fallback_text, rel_path = self._recover_placeholder_page(
-                    pdf_doc, info, source_name, pdf_bytes
+                    pdf_doc, info, source_name, doc_hash
                 )
                 if rel_path:
                     page_image_paths.append(rel_path)
