@@ -6,83 +6,31 @@ if platform.system() == "Darwin" and platform.machine() == "arm64":
     os.environ.setdefault("TORCH_DEVICE", "mps")
     os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
+import hashlib
 import io
 import logging
-import math
 import re
 import tempfile
 import threading
-# FIX: removed duplicate `import os` (was imported twice in the original file)
 from collections import Counter
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
+import pymupdf  # PyMuPDF
+from PIL import Image
 import torch
 from langchain_core.documents import Document
+from marker.config.parser import ConfigParser
+from marker.converters.pdf import PdfConverter
+from marker.models import create_model_dict
 
 from base_parser import BaseDocumentParser
 
 logger = logging.getLogger(__name__)
 
-try:
-    import pymupdf  # PyMuPDF
-    FITZ_AVAILABLE = True
-except ImportError:
-    FITZ_AVAILABLE = False
-    logger.warning(
-        "PyMuPDF not available! Header/footer removal and page classification will not work."
-    )
-
-try:
-    # API for newer Marker-PDF versions (v1.0+)
-    from marker.converters.pdf import PdfConverter
-    from marker.models import create_model_dict
-    from marker.config.parser import ConfigParser
-    MARKER_AVAILABLE = True
-except ImportError:
-    MARKER_AVAILABLE = False
-
 # ======================================================================
 # SETTINGS
 # ======================================================================
-
-# Master switch: remove headers and footers before extraction?
-REMOVE_HEADERS_FOOTERS = True
-
-# How to find headers / footers (used only if REMOVE_HEADERS_FOOTERS is True):
-#   "auto"  - removes only text blocks in the top/bottom zone that REPEAT across
-#             pages (page numbers, running titles). Safe for energy certificates,
-#             plans and tables. Works only on pages with a text layer.
-#   "fixed" - removes fixed margins (below) from every page, including scans.
-#             Risky for mixed documents (may delete real content near the edge).
-HEADER_FOOTER_MODE = "auto"
-
-# --- "fixed" mode ---
-FIXED_TOP_MARGIN_PT = 50          # 1 pt = 1/72 inch
-FIXED_BOTTOM_MARGIN_PT = 60
-FIXED_MIN_CONTENT_HEIGHT_PT = 50  # pages shorter than margins + this are left untouched
-
-# --- "auto" mode ---
-AUTO_HEADER_ZONE_RATIO = 0.10     # top 10% of the page height is the header zone
-AUTO_FOOTER_ZONE_RATIO = 0.10     # bottom 10% is the footer zone
-AUTO_MIN_REPEAT_PAGES = 3         # a block must repeat on at least this many pages...
-AUTO_MIN_REPEAT_RATIO = 0.30      # ...and on at least this share of pages with text
-AUTO_MAX_BLOCK_CHARS = 200        # longer blocks are never treated as header/footer
-# FIX / KNOWN LIMITATION: the repetition threshold above is computed GLOBALLY
-# across the whole stitched file (see _find_repeated_blocks). If the PDF
-# contains many DIFFERENT contract templates (each appearing only once or
-# twice), a template-specific letterhead will never reach the repetition
-# threshold and will NOT be removed, while the most common template in the
-# file will be cleaned. A more correct approach would compute repetition
-# PER section_index (i.e. per stitched sub-document) instead of globally.
-# This is not implemented here because of a chicken-and-egg dependency:
-# section_index is only known AFTER page classification, and classification
-# currently runs AFTER header/footer redaction (so that a page containing
-# only a page number becomes 'blank'). Doing per-section redaction would
-# require a first classification pass BEFORE redaction, which is less
-# reliable (a header/footer block long enough to exceed MIN_TEXT_CHARS could
-# make a blank-looking page be misclassified as 'text', creating a false
-# section boundary). Left as a documented limitation for now.
 
 # --- Page classification ---
 MIN_TEXT_CHARS = 20               # fewer characters in the text layer = "no real text"
@@ -91,12 +39,53 @@ INK_DELTA = 50                    # pixel is "ink" if darker than background by 
 CLASSIFY_MAX_PX = 800             # longer side of the low-res render used for classification
 
 # --- OCR noise filter (OCR on plans/photos returns garbage) ---
-MIN_OCR_LETTERS = 10
 MIN_OCR_LETTER_RATIO = 0.4        # letters / non-space characters
 
 # --- Pages without extractable text (plans, drawings, photos, stamps) ---
 INCLUDE_NON_TEXT_PAGES = True     # keep them as a short placeholder Document
 NON_TEXT_PLACEHOLDER = "[Strona bez tekstu: rysunek, plan lub obraz]"
+
+# --- Images / figures detected by Marker ---
+# Pictures and figures that Marker extracts are saved to
+#   <IMAGES_DIR>/<document name>_<hash>/<marker file name>
+# and the reference in the Markdown is replaced with a marker built from
+# IMAGE_MARKER_TEMPLATE ({path} = relative path, {name} = file name).
+# Markdown-image variant: IMAGE_MARKER_TEMPLATE = "![OBRAZ {name}]({path})"
+SAVE_IMAGES = True
+IMAGES_DIR = "img"
+IMAGE_MARKER_TEMPLATE = "[OBRAZ: {path}]"
+# Pictures with a shorter side below this are treated as noise (pen initials,
+# small stamps, codes) and are neither saved nor referenced in the Markdown.
+# Independent of OCR_PICTURE_MIN_PX, which only gates the second OCR pass.
+IMAGE_MIN_PX = 150
+
+# --- Second OCR pass on pictures ---
+# Marker does not run OCR inside blocks it labels as Picture/Figure. A scanned
+# fragment pasted into a page (e.g. a quarter of a page, slightly skewed) is
+# often labelled that way. With OCR_PICTURES on, every picture Marker detected
+# is wrapped in a one-page PDF and converted again, so Marker treats it as a
+# scan. Each picture is first cropped to its ink region, then the OCR result is
+# kept only if it clears the picture-specific noise thresholds below.
+OCR_PICTURES = True
+OCR_PICTURE_MIN_PX = 150          # pictures with a shorter side are skipped
+OCR_PICTURES_MAX_PER_DOC = 50     # safety limit of extra conversions per file
+OCR_TEXT_LABEL = "[Tekst rozpoznany z obrazu]"
+# The second pass often reads slightly-skewed scans imperfectly, so it uses
+# its own, more forgiving noise thresholds than the main OCR filter above.
+PIC_OCR_MIN_LETTERS = 6
+PIC_OCR_LETTER_RATIO = 0.3
+
+# --- Placeholder pages where Marker detected no picture ---
+# A scanned fragment that Marker treats as a scan (not a Picture/Figure)
+# leaves no image behind, and when its OCR comes back as noise the page
+# would become a bare placeholder with nothing saved. For such pages the
+# page is rendered with PyMuPDF and cropped to its ink region: the second
+# OCR pass is run on the crop (the text fills the frame, so it reads much
+# better) and the crop is saved to the images folder, so the drawing/plan
+# is not lost.
+OCR_PLACEHOLDER_PAGES = True          # second OCR pass on the ink crop
+SAVE_PLACEHOLDER_PAGE_IMAGES = True   # save the ink crop as a PNG
+PLACEHOLDER_PAGE_DPI = 150            # render resolution of the page
 
 
 @dataclass
@@ -116,14 +105,15 @@ class PdfParser(BaseDocumentParser):
     Requires GPU acceleration for acceptable performance.
 
     Steps:
-    1. Optionally remove headers / footers (see REMOVE_HEADERS_FOOTERS).
-    2. Classify every page: text | scan | drawing | blank.
-    3. Convert the whole file with Marker (pages are never deleted, so Marker's
-       page numbers match the original file).
-    4. Build one Document per page:
+    1. Classify every page: text | scan | drawing | blank.
+    2. Convert the whole file with Marker (page numbers match the original file).
+    3. Build one Document per page:
        - text    -> Marker output (fallback: PyMuPDF text layer),
        - scan    -> Marker OCR output, noise-filtered,
-       - drawing -> placeholder (plan / image without text),
+       - drawing -> placeholder (plan / image without text); as a last
+                    resort the page is rendered and cropped to ink, the
+                    second OCR pass is tried on the crop, and the crop is
+                    saved to the images folder so the drawing is not lost,
        - blank   -> skipped; blank pages also mark a boundary between documents
                     (metadata["section_index"]).
     """
@@ -142,22 +132,23 @@ class PdfParser(BaseDocumentParser):
     # Markdown image references (Marker emits them for figures)
     _MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 
-    def __init__(self, languages: str = "pl,en"):
+    # Same, but captures the file name/path (group 1)
+    _MD_IMAGE_REF_RE = re.compile(r"!\[[^\]]*\]\(([^)]*)\)")
+
+    # A lettered sub-list item that Marker renumbered: an ordered-list marker
+    # ("1.") directly followed by the original letter marker ("a." or "a)")
+    # plus a space, e.g. "1. a. txt" or "1. a) txt". Group 1 = leading indent,
+    # group 2 = the letter, group 3 = the original delimiter ("." or ")").
+    _LIST_DOUBLE_MARKER_RE = re.compile(r"^(\s*)\d+\.\s+([a-z])([.)])(?=\s)", re.MULTILINE)
+
+    def __init__(self, languages: str = "pl,en", images_dir: str = IMAGES_DIR):
         """
         Args:
             languages: Comma-separated language codes (e.g. "pl,en").
                        May be ignored in newer Marker versions.
+            images_dir: Folder for pictures/figures extracted by Marker
+                        (used only if SAVE_IMAGES is True).
         """
-        if not MARKER_AVAILABLE:
-            raise ImportError("Install Marker: pip install marker-pdf")
-
-        if REMOVE_HEADERS_FOOTERS and not FITZ_AVAILABLE:
-            logger.warning("Header/footer removal enabled, but PyMuPDF is missing! Install 'pymupdf'.")
-        elif REMOVE_HEADERS_FOOTERS:
-            logger.info(f"Header/footer removal: ON (mode={HEADER_FOOTER_MODE})")
-        else:
-            logger.info("Header/footer removal: OFF")
-
         # ── GPU / Marker models ──────────────────────────────────
         # Note: the device is chosen by Marker itself (TORCH_DEVICE environment
         # variable, set BEFORE importing Marker). The value below is informational only.
@@ -174,6 +165,7 @@ class PdfParser(BaseDocumentParser):
         )
 
         self.languages = languages
+        self.images_dir = images_dir
 
         # FIX: hard, queryable counter for the "no page separators found"
         # fallback path, instead of relying solely on an easily-missed
@@ -200,33 +192,19 @@ class PdfParser(BaseDocumentParser):
         pdf_doc = None
 
         try:
-            # ── 1. Header/footer removal + page analysis (PyMuPDF) ──
-            pages_info: Optional[List[PageInfo]] = None
+            # ── 1. Page analysis (PyMuPDF) ───────────────────────
+            pdf_bytes = self._get_bytes(file_source)
+            pdf_doc = pymupdf.Document(stream=pdf_bytes, filetype="pdf")
+            pages_info = self._analyze_pages(pdf_doc)
 
-            if FITZ_AVAILABLE:
-                pdf_doc = pymupdf.Document(
-                    stream=self._get_bytes(file_source), filetype="pdf"
-                )
-                if REMOVE_HEADERS_FOOTERS:
-                    logger.info(f"Removing headers/footers: {source_name}")
-                    self._remove_headers_footers(pdf_doc)
-
-                # Classification runs AFTER removal, so a page that contained only
-                # a page number becomes 'blank'
-                pages_info = self._analyze_pages(pdf_doc)
-
-                if all(p.kind == "blank" for p in pages_info):
-                    logger.warning(f"All pages are blank in '{source_name}'")
-                    return []
-
-                pdf_to_process = pdf_doc.tobytes()
-            else:
-                pdf_to_process = self._get_bytes(file_source)
+            if all(p.kind == "blank" for p in pages_info):
+                logger.warning(f"All pages are blank in '{source_name}'")
+                return []
 
             # ── 2. Write to a temporary file ─────────────────────
             # PdfConverter takes a file path, so a temporary file is required.
             with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_pdf:
-                temp_pdf.write(pdf_to_process)
+                temp_pdf.write(pdf_bytes)
                 temp_pdf_path = temp_pdf.name
 
             # ── 3. Marker conversion (GPU), serialized ───────────
@@ -234,37 +212,51 @@ class PdfParser(BaseDocumentParser):
             with self._convert_lock:
                 rendered = self.converter(temp_pdf_path)
             md_text = (rendered.markdown or "").strip()
+            # Second OCR pass on pictures (e.g. a scanned fragment pasted into a page)
+            md_text = self._inject_picture_ocr(md_text, getattr(rendered, "images", None))
+            # Pictures/figures detected by Marker -> files in images_dir.
+            # The Markdown still holds the raw "![](...)" references at this
+            # point; they are replaced later, when the documents are built
+            # (the page logic needs to see them to detect image-only pages).
+            image_map = self._save_images(
+                getattr(rendered, "images", None), source_name, pdf_bytes
+            )
             logger.info(f"Conversion finished: {source_name}")
 
             # ── 4. Building documents ────────────────────────────
-            if pages_info is None:
-                # No PyMuPDF -> no classification, only Marker's own pagination
-                documents = self._build_documents_unclassified(md_text, source_name)
-            else:
-                marker_pages = self._split_marker_pages(md_text)
-                if marker_pages is None:
-                    # FIX: increment hard counter in addition to the warning,
-                    # so this degraded path is queryable via diagnostics()
-                    # instead of relying solely on logs.
-                    with self._stats_lock:
-                        self._fallback_whole_document_count += 1
-                    logger.warning(
-                        f"No page separators detected in Marker output ({source_name}). "
-                        f"Returning the whole text as a single Document. "
-                        f"(cumulative fallback count: {self._fallback_whole_document_count})"
-                    )
-                    documents = (
-                        [Document(page_content=md_text, metadata=self._base_metadata(source_name))]
-                        if md_text
-                        else []
-                    )
-                else:
-                    if marker_pages and max(marker_pages) > len(pages_info):
-                        logger.warning(
-                            f"Marker returned page {max(marker_pages)} but the file has "
-                            f"{len(pages_info)} pages ({source_name}) - page numbers may be misaligned."
+            marker_pages = self._split_marker_pages(md_text)
+            if marker_pages is None:
+                # FIX: increment hard counter in addition to the warning,
+                # so this degraded path is queryable via diagnostics()
+                # instead of relying solely on logs.
+                with self._stats_lock:
+                    self._fallback_whole_document_count += 1
+                    fallback_count = self._fallback_whole_document_count
+                logger.warning(
+                    f"No page separators detected in Marker output ({source_name}). "
+                    f"Returning the whole text as a single Document. "
+                    f"(cumulative fallback count: {fallback_count})"
+                )
+                documents = (
+                    [
+                        Document(
+                            page_content=self._apply_images(md_text, image_map),
+                            metadata=self._base_metadata(source_name),
                         )
-                    documents = self._build_documents(marker_pages, pages_info, source_name)
+                    ]
+                    if md_text
+                    else []
+                )
+            else:
+                if marker_pages and max(marker_pages) > len(pages_info):
+                    logger.warning(
+                        f"Marker returned page {max(marker_pages)} but the file has "
+                        f"{len(pages_info)} pages ({source_name}) - page numbers may be misaligned."
+                    )
+                documents = self._build_documents(
+                    marker_pages, pages_info, source_name, image_map,
+                    pdf_doc=pdf_doc, pdf_bytes=pdf_bytes,
+                )
 
             if not documents:
                 logger.warning(f"No content extracted for '{source_name}'")
@@ -289,23 +281,280 @@ class PdfParser(BaseDocumentParser):
 
     def diagnostics(self) -> Dict[str, str]:
         """Diagnostic information for Marker."""
+        with self._stats_lock:
+            fallback_count = self._fallback_whole_document_count
+
         info = {
             "device": self._device,
             "languages": self.languages,
-            "remove_headers_footers": str(REMOVE_HEADERS_FOOTERS),
-            "header_footer_mode": HEADER_FOOTER_MODE,
-            "pymupdf_available": str(FITZ_AVAILABLE),
             "torch_version": torch.__version__,
             "cuda_available": str(torch.cuda.is_available()),
             # FIX: expose the fallback counter so degraded conversions
             # (whole-document fallback due to missing page separators)
             # are visible in monitoring, not just in logs.
-            "fallback_whole_document_count": str(self._fallback_whole_document_count),
+            "fallback_whole_document_count": str(fallback_count),
         }
         if torch.cuda.is_available():
             info["gpu_name"] = torch.cuda.get_device_name(0)
             info["gpu_vram_gb"] = f"{torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f}"
         return info
+
+    # ══════════════════════════════════════════════════════════════
+    # IMAGES (pictures / figures detected by Marker)
+    # ══════════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _image_marker(path: str) -> str:
+        """Marker text that replaces an image reference in the Markdown."""
+        return IMAGE_MARKER_TEMPLATE.format(path=path, name=os.path.basename(path))
+
+    def _images_folder(self, source_name: str, pdf_bytes: bytes) -> str:
+        """Per-document images folder <images_dir>/<stem>_<hash8>, created."""
+        stem = re.sub(r"[^\w.-]+", "_", os.path.splitext(source_name)[0]).strip("._") or "document"
+        folder = f"{stem}_{hashlib.sha1(pdf_bytes).hexdigest()[:8]}"
+        target_dir = os.path.join(self.images_dir, folder)
+        os.makedirs(target_dir, exist_ok=True)
+        return target_dir
+
+    def _save_images(
+        self,
+        images: Optional[Dict[str, object]],
+        source_name: str,
+        pdf_bytes: bytes,
+    ) -> Dict[str, str]:
+        """
+        Saves Marker's images (PIL) to <images_dir>/<document>_<hash>/.
+        Returns {marker file name: relative path with forward slashes}.
+        """
+        if not SAVE_IMAGES or not images:
+            return {}
+
+        target_dir = self._images_folder(source_name, pdf_bytes)
+        folder = os.path.basename(target_dir)
+
+        image_map: Dict[str, str] = {}
+        skipped = 0
+        for name, image in images.items():
+            width, height = image.size
+            if min(width, height) < IMAGE_MIN_PX:
+                # noise: pen initials, small stamps / codes
+                skipped += 1
+                continue
+            safe_name = os.path.basename(name)
+            file_path = os.path.join(target_dir, safe_name)
+            try:
+                # JPEG cannot store alpha / palette modes
+                if safe_name.lower().endswith((".jpg", ".jpeg")) and image.mode != "RGB":
+                    image = image.convert("RGB")
+                image.save(file_path)
+            except Exception as e:
+                logger.warning(f"Could not save image '{name}' ({source_name}): {e}")
+                continue
+            image_map[name] = f"{self.images_dir}/{folder}/{safe_name}".replace(os.sep, "/")
+
+        logger.info(
+            f"Saved {len(image_map)}/{len(images)} images to '{target_dir}' "
+            f"({source_name}); {skipped} below IMAGE_MIN_PX skipped"
+        )
+        return image_map
+
+    def _apply_images(self, text: str, image_map: Optional[Dict[str, str]]) -> str:
+        """Replaces Marker's '![](file)' references with image markers."""
+        if not text or not image_map:
+            return text
+
+        def _replace(match: "re.Match") -> str:
+            path = image_map.get(match.group(1))
+            # References to images we did not save (too small / noise) are
+            # dropped from the Markdown instead of left as a broken link.
+            return self._image_marker(path) if path else ""
+
+        return self._MD_IMAGE_REF_RE.sub(_replace, text)
+
+    def _image_paths(self, text: str, image_map: Optional[Dict[str, str]]) -> List[str]:
+        """Saved image paths referenced in the given Marker text."""
+        if not text or not image_map:
+            return []
+        return [image_map[n] for n in self._MD_IMAGE_REF_RE.findall(text) if n in image_map]
+
+    @staticmethod
+    def _crop_to_ink(image):
+        """
+        Crops a picture to the region that actually contains ink. A scanned
+        fragment pasted onto a mostly-white page otherwise occupies only a
+        fraction of the frame, and the second OCR pass reads it far better
+        when the text fills the image. Returns the input unchanged when there
+        is no clear ink region.
+        """
+        width, height = image.size
+        try:
+            gray = image.convert("L")
+            hist = gray.histogram()
+            background = max(range(256), key=hist.__getitem__)
+            # ink mask: 255 where the pixel is darker than the dominant level
+            mask = gray.point(lambda v: 255 if v < background - INK_DELTA else 0)
+            bbox = mask.getbbox()
+            if bbox is None:
+                return image
+            pad = max(8, int(0.02 * max(width, height)))  # room so glyphs are not clipped
+            left, top = max(0, bbox[0] - pad), max(0, bbox[1] - pad)
+            right, bottom = min(width, bbox[2] + pad), min(height, bbox[3] + pad)
+            if left == 0 and top == 0 and right == width and bottom == height:
+                return image  # ink fills the frame; nothing to crop
+            return image.crop((left, top, right, bottom))
+        except Exception:
+            return image  # never let cropping break the OCR pass
+
+    def _ocr_picture(self, image) -> str:
+        """
+        Second Marker pass on ONE picture. The picture is wrapped in a one-page
+        PDF without a text layer, so Marker treats it as a scan and runs OCR
+        instead of labelling it a figure again. Returns "" for noise.
+        """
+        image = self._crop_to_ink(image)  # small fragment on white -> text fills frame
+        width, height = image.size
+        if min(width, height) < OCR_PICTURE_MIN_PX:
+            return ""
+
+        tmp_path = None
+        try:
+            buf = io.BytesIO()
+            image.convert("RGB").save(buf, format="PNG")
+
+            page_w = 595.0  # A4 width in points; height keeps the aspect ratio
+            page_h = page_w * height / width
+            doc = pymupdf.open()
+            try:
+                page = doc.new_page(width=page_w, height=page_h)
+                page.insert_image(page.rect, stream=buf.getvalue())
+                pdf_bytes = doc.tobytes()
+            finally:
+                doc.close()
+
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp.write(pdf_bytes)
+                tmp_path = tmp.name
+
+            with self._convert_lock:
+                rendered = self.converter(tmp_path)
+
+            text = rendered.markdown or ""
+            text = self._PAGE_SEPARATOR_RE.sub("\n", text)
+            text = self._MD_IMAGE_RE.sub("", text).strip()
+
+            compact = re.sub(r"\s", "", text)
+            letters = sum(ch.isalpha() for ch in compact)
+            if letters < PIC_OCR_MIN_LETTERS or letters / max(len(compact), 1) < PIC_OCR_LETTER_RATIO:
+                # OCR produced something but it looked like noise - keep the
+                # raw output in the log so a failing page can be diagnosed
+                logger.info(
+                    f"Picture OCR rejected as noise (letters={letters}, "
+                    f"compact={len(compact)}): {text[:150]!r}"
+                )
+                return ""
+            return text
+        except Exception as e:
+            logger.warning(f"Picture OCR failed: {e}")
+            return ""
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+    def _inject_picture_ocr(self, md_text: str, images: Optional[Dict[str, object]]) -> str:
+        """
+        Puts the text recognized in pictures right after their '![](file)'
+        references. Done on the raw Marker Markdown, BEFORE the page logic, so a
+        page whose only content is such a picture is no longer treated as empty.
+        """
+        if not OCR_PICTURES or not images or not md_text:
+            return md_text
+
+        ocr_by_name: Dict[str, str] = {}
+        candidates = list(images.items())[:OCR_PICTURES_MAX_PER_DOC]
+        for name, image in candidates:
+            text = self._ocr_picture(image)
+            if text:
+                ocr_by_name[name] = text
+
+        logger.info(f"Picture OCR: text recognized in {len(ocr_by_name)}/{len(candidates)} pictures")
+        if not ocr_by_name:
+            return md_text
+
+        def _replace(match: "re.Match") -> str:
+            text = ocr_by_name.get(match.group(1))
+            if not text:
+                return match.group(0)
+            return f"{match.group(0)}\n\n{OCR_TEXT_LABEL}\n{text}\n"
+
+        return self._MD_IMAGE_REF_RE.sub(_replace, md_text)
+
+    def _recover_placeholder_page(
+        self,
+        pdf_doc: Optional["pymupdf.Document"],
+        info: PageInfo,
+        source_name: str,
+        pdf_bytes: Optional[bytes],
+    ) -> Tuple[str, Optional[str]]:
+        """
+        Last resort for a page that is about to become a non-text placeholder
+        but on which Marker detected no picture: a scanned fragment (e.g. a
+        quarter page, slightly skewed) that Marker treated as a scan and whose
+        OCR came back as noise. Renders the page with PyMuPDF and crops it to
+        ink. Returns (ocr_text, saved_image_path): the second OCR pass is
+        tried on the crop (the text fills the frame, so it reads much better)
+        and the crop is saved to the images folder, so the drawing/plan is not
+        lost.
+        """
+        if pdf_doc is None or pdf_bytes is None:
+            return "", None
+        try:
+            mat = pymupdf.Matrix(PLACEHOLDER_PAGE_DPI / 72, PLACEHOLDER_PAGE_DPI / 72)
+            pix = pdf_doc[info.number - 1].get_pixmap(matrix=mat, alpha=False)
+            image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            render_size = image.size
+            image = self._crop_to_ink(image)
+        except Exception as e:
+            logger.warning(f"[p{info.number}] page render failed ({source_name}): {e}")
+            return "", None
+
+        ocr_text = self._ocr_picture(image) if OCR_PLACEHOLDER_PAGES else ""
+        if ocr_text:
+            logger.info(
+                f"[p{info.number}] recovered {len(ocr_text)} chars via cropped page OCR ({source_name})"
+            )
+        else:
+            # The sizes show which step failed: render == crop means the ink
+            # touches the frame (nothing to crop, the fragment still floats in
+            # white space); a small crop with no text means the VLM could not
+            # read it (check the saved page_NNN.png).
+            logger.warning(
+                f"[p{info.number}] cropped page OCR returned no text "
+                f"(render={render_size[0]}x{render_size[1]} -> "
+                f"crop={image.size[0]}x{image.size[1]}) ({source_name})"
+            )
+        rel_path = self._save_rendered_image(
+            image, source_name, pdf_bytes, f"page_{info.number:03d}.png"
+        )
+        return ocr_text, rel_path
+
+    def _save_rendered_image(
+        self, image, source_name: str, pdf_bytes: bytes, file_name: str
+    ) -> Optional[str]:
+        """
+        Saves a rendered (ink-cropped) page to the per-document images folder.
+        Returns the relative path with forward slashes, or None.
+        """
+        if not SAVE_PLACEHOLDER_PAGE_IMAGES:
+            return None
+        try:
+            target_dir = self._images_folder(source_name, pdf_bytes)
+            image.save(os.path.join(target_dir, file_name))
+            return (
+                f"{self.images_dir}/{os.path.basename(target_dir)}/{file_name}"
+            ).replace(os.sep, "/")
+        except Exception as e:
+            logger.warning(f"Could not save rendered page '{file_name}' ({source_name}): {e}")
+            return None
 
     # ══════════════════════════════════════════════════════════════
     # PAGE ANALYSIS (classification + section boundaries)
@@ -385,7 +634,13 @@ class PdfParser(BaseDocumentParser):
         if not compact:
             return True
         letters = sum(ch.isalpha() for ch in compact)
-        return letters < MIN_OCR_LETTERS or letters / len(compact) < MIN_OCR_LETTER_RATIO
+        if letters < 3:
+            return True
+        # Short fragments are judged only by the number of letters; the
+        # letter/character ratio is applied only to longer text
+        if len(compact) < 60:
+            return False
+        return letters / len(compact) < MIN_OCR_LETTER_RATIO
 
     # ══════════════════════════════════════════════════════════════
     # BUILDING DOCUMENTS
@@ -409,11 +664,22 @@ class PdfParser(BaseDocumentParser):
                 pages[int(match.group(1)) + 1] = page_text  # Marker counts from 0
         return pages
 
+    def _collapse_list_numbers(self, text: str) -> str:
+        """
+        Removes the redundant outer numbering Marker adds in front of lettered
+        sub-list items ("1. a. txt" -> "a. txt", "1. a) txt" -> "a) txt"), so
+        the document's original a/b/c lettering is what remains.
+        """
+        return self._LIST_DOUBLE_MARKER_RE.sub(r"\1\2\3", text)
+
     def _build_documents(
         self,
         marker_pages: Dict[int, str],
         pages_info: List[PageInfo],
         source_name: str,
+        image_map: Optional[Dict[str, str]] = None,
+        pdf_doc: Optional["pymupdf.Document"] = None,
+        pdf_bytes: Optional[bytes] = None,
     ) -> List[Document]:
         """Combines Marker output with the page analysis into one Document per page."""
         documents: List[Document] = []
@@ -427,12 +693,19 @@ class PdfParser(BaseDocumentParser):
                 continue
 
             text = marker_pages.get(info.number, "")
+            raw_marker_text = text  # still contains the "![](...)" references
             page_type = info.kind
             method = "marker"
+            # Images Marker detected on this page (computed early: the
+            # placeholder recovery below may add its saved page render)
+            page_image_paths = self._image_paths(raw_marker_text, image_map)
 
             if info.kind == "text":
-                if not text:
-                    # Fallback: text layer from PyMuPDF
+                visible = self._MD_IMAGE_RE.sub("", text).strip()
+                # Fallback: text layer from PyMuPDF when Marker returned nothing
+                # or lost a large part of the text (e.g. a block classified as
+                # header/footer or as a picture)
+                if len(visible) < 0.5 * len(info.plain_text):
                     text = info.plain_text
                     method = "pymupdf-text"
                 # FIX: this branch is currently unreachable in practice, because
@@ -456,12 +729,36 @@ class PdfParser(BaseDocumentParser):
             # scan artifact) could slip through as "real" content without a
             # placeholder. Now we also re-check _is_noise() on the fallback
             # text itself.
-            if not text or self._is_noise(text):
-                non_text_pages.append(info.number)
-                if not INCLUDE_NON_TEXT_PAGES:
-                    continue
-                text = NON_TEXT_PLACEHOLDER
-                method = "placeholder"
+            if not text or (info.kind != "text" and self._is_noise(text)):
+                logger.warning(
+                    f"[p{info.number}] placeholder: kind={info.kind} "
+                    f"plain={len(info.plain_text)} discarded={text[:200]!r}"
+                )
+                # Marker treated the page as a scan, its OCR came back as
+                # noise, and no picture block was detected - the drawing/plan
+                # would be lost entirely. Render the page and crop it to ink:
+                # try the second OCR pass on the crop and save the crop.
+                fallback_text, rel_path = self._recover_placeholder_page(
+                    pdf_doc, info, source_name, pdf_bytes
+                )
+                if rel_path:
+                    page_image_paths.append(rel_path)
+                if fallback_text:
+                    text = f"{OCR_TEXT_LABEL}\n{fallback_text}"
+                    method = "marker-page-ocr"
+                else:
+                    non_text_pages.append(info.number)
+                    if not INCLUDE_NON_TEXT_PAGES:
+                        continue
+                    text = NON_TEXT_PLACEHOLDER
+                    method = "placeholder"
+
+            if method == "marker":
+                text = self._apply_images(text, image_map)
+            elif page_image_paths:
+                # Text came from PyMuPDF or is the placeholder: the Marker text
+                # with the references was not used, so append the markers
+                text = text + "\n\n" + "\n".join(self._image_marker(p) for p in page_image_paths)
 
             metadata = self._base_metadata(source_name)
             metadata.update(
@@ -472,6 +769,10 @@ class PdfParser(BaseDocumentParser):
                     "extraction_method": method,
                 }
             )
+            if page_image_paths:
+                metadata["image_count"] = len(page_image_paths)
+                metadata["image_paths"] = ";".join(page_image_paths)
+            text = self._collapse_list_numbers(text)
             documents.append(Document(page_content=text, metadata=metadata))
 
         if blank_pages:
@@ -483,166 +784,11 @@ class PdfParser(BaseDocumentParser):
 
         return documents
 
-    def _build_documents_unclassified(self, md_text: str, source_name: str) -> List[Document]:
-        """Fallback without PyMuPDF: only Marker's pagination (no page analysis)."""
-        if not md_text:
-            return []
-
-        marker_pages = self._split_marker_pages(md_text)
-        if marker_pages is None:
-            return [Document(page_content=md_text, metadata=self._base_metadata(source_name))]
-
-        documents = []
-        for number, text in sorted(marker_pages.items()):
-            metadata = self._base_metadata(source_name)
-            metadata["page_number"] = number
-            documents.append(Document(page_content=text, metadata=metadata))
-        return documents
-
     @staticmethod
     def _base_metadata(source_name: str) -> Dict[str, object]:
         return {
             "source": source_name,
             "parser": "marker",
-            "headers_footers_removed": REMOVE_HEADERS_FOOTERS,
-        }
-
-    # ══════════════════════════════════════════════════════════════
-    # HEADER / FOOTER REMOVAL (PyMuPDF redaction)
-    # ══════════════════════════════════════════════════════════════
-
-    def _remove_headers_footers(self, pdf_doc: "pymupdf.Document") -> None:
-        """
-        Removes headers / footers by redaction (behaves the same for every
-        extraction engine). Pages are never deleted, so page numbers stay
-        aligned with the original file.
-        """
-        if HEADER_FOOTER_MODE == "auto":
-            rects_by_page = self._find_repeated_blocks(pdf_doc)
-            image_mode = pymupdf.PDF_REDACT_IMAGE_NONE  # text blocks only
-        elif HEADER_FOOTER_MODE == "fixed":
-            rects_by_page = self._fixed_margin_rects(pdf_doc)
-            image_mode = pymupdf.PDF_REDACT_IMAGE_PIXELS  # also clears scanned pixels
-        else:
-            raise ValueError(
-                f"Unknown HEADER_FOOTER_MODE: {HEADER_FOOTER_MODE!r} (use 'auto' or 'fixed')"
-            )
-
-        pages_redacted = 0
-        for i, page in enumerate(pdf_doc):
-            rects = rects_by_page.get(i)
-            if not rects:
-                continue
-            for rect in rects:
-                # Rects are in visible (rotated) coordinates; redaction needs
-                # unrotated ones (identity matrix for pages with rotation 0).
-                # FIX / CAUTION: this has NOT been empirically verified against
-                # real pages with /Rotate 90, 180 or 270 in the current PyMuPDF
-                # version. If redaction appears to clip the wrong part of a
-                # rotated page, this is the first place to check - test on an
-                # actual rotated page before trusting this in production.
-                page.add_redact_annot(rect * page.derotation_matrix)
-            page.apply_redactions(
-                images=image_mode,
-                # FIX / CAUTION: vector graphics (e.g. a horizontal rule drawn
-                # under a header, or a vector-drawn logo) are NEVER removed,
-                # even in "fixed" mode. This is usually harmless for text
-                # extraction (vectors don't produce text), but if Marker
-                # rasterizes the page before OCR, leftover vector artifacts in
-                # the header/footer zone could theoretically be picked up as
-                # OCR noise. Low risk, but not a complete visual clean-up.
-                graphics=pymupdf.PDF_REDACT_LINE_ART_NONE,
-            )
-            pages_redacted += 1
-
-        logger.info(
-            f"Header/footer removal ({HEADER_FOOTER_MODE}): "
-            f"{pages_redacted}/{len(pdf_doc)} pages modified."
-        )
-
-    @staticmethod
-    def _fixed_margin_rects(pdf_doc: "pymupdf.Document") -> Dict[int, List["pymupdf.Rect"]]:
-        """'fixed' mode: top and bottom strips of a constant height on every page."""
-        result: Dict[int, List["pymupdf.Rect"]] = {}
-        for i, page in enumerate(pdf_doc):
-            r = page.rect
-            if r.height <= FIXED_TOP_MARGIN_PT + FIXED_BOTTOM_MARGIN_PT + FIXED_MIN_CONTENT_HEIGHT_PT:
-                continue  # page too short for such margins
-            result[i] = [
-                pymupdf.Rect(r.x0, r.y0, r.x1, r.y0 + FIXED_TOP_MARGIN_PT),
-                pymupdf.Rect(r.x0, r.y1 - FIXED_BOTTOM_MARGIN_PT, r.x1, r.y1),
-            ]
-        return result
-
-    @staticmethod
-    def _normalize_block(text: str) -> str:
-        """Digits -> '#', lowercase, collapsed whitespace ('Strona 3 z 10' == 'Strona 7 z 10')."""
-        text = re.sub(r"\d+", "#", (text or "").lower())
-        return re.sub(r"\s+", " ", text).strip()
-
-    def _find_repeated_blocks(
-        self, pdf_doc: "pymupdf.Document"
-    ) -> Dict[int, List["pymupdf.Rect"]]:
-        """
-        'auto' mode: finds text blocks in the header / footer zone whose
-        (normalized) content repeats across many pages.
-
-        KNOWN LIMITATION (see comment near AUTO_MIN_REPEAT_RATIO above):
-        repetition is computed GLOBALLY across the whole stitched file. For a
-        file containing many distinct contract templates, a template-specific
-        header appearing only once or twice will not be removed, while the
-        single most common template's header will be. Fixing this properly
-        would require computing repetition per section_index, which in turn
-        requires page classification to run BEFORE redaction - the opposite
-        of the current order - and is left as a future improvement.
-        """
-        per_page: List[List[tuple]] = []
-        counts: Counter = Counter()
-        text_pages = 0
-
-        for page in pdf_doc:
-            r = page.rect
-            header_limit = r.y0 + r.height * AUTO_HEADER_ZONE_RATIO
-            footer_limit = r.y1 - r.height * AUTO_FOOTER_ZONE_RATIO
-
-            entries = []
-            page_has_text = False
-
-            for x0, y0, x1, y1, txt, _block_no, block_type in page.get_text("blocks"):
-                if block_type != 0:  # 0 = text block, 1 = image block
-                    continue
-                signature = self._normalize_block(txt)
-                if not signature:
-                    continue
-                page_has_text = True
-
-                if y1 <= header_limit:
-                    zone = "top"
-                elif y0 >= footer_limit:
-                    zone = "bottom"
-                else:
-                    continue
-
-                if len(signature) > AUTO_MAX_BLOCK_CHARS:
-                    continue
-                entries.append((zone, signature, pymupdf.Rect(x0, y0, x1, y1)))
-
-            if page_has_text:
-                text_pages += 1
-            counts.update({(zone, sig) for zone, sig, _ in entries})  # once per page
-            per_page.append(entries)
-
-        threshold = max(AUTO_MIN_REPEAT_PAGES, math.ceil(AUTO_MIN_REPEAT_RATIO * text_pages))
-        repeated = {key for key, count in counts.items() if count >= threshold}
-
-        logger.debug(
-            f"Repeated header/footer patterns: {len(repeated)} "
-            f"(threshold={threshold} pages, text pages={text_pages})"
-        )
-
-        return {
-            i: [rect for zone, sig, rect in entries if (zone, sig) in repeated]
-            for i, entries in enumerate(per_page)
         }
 
     # ══════════════════════════════════════════════════════════════

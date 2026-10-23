@@ -25,16 +25,18 @@ except ImportError:
     print("Zainstaluj ją wpisując: pip install matplotlib")
 
 # Import parsers using aliases
-from pdf_parser_pymupdf4llm import PdfParser as PyMuPdfParser
-from pdf_parser_kreuzberg import PdfParser as KreuzbergParser
-from pdf_parser_docling import PdfParser as DoclingParser
-from pdf_parser_marker import PdfParser as MarkerParser
-from pdf_parser_llm_model import PdfParser as LmStudioParser
-from pdf_parser_marker_llm import PdfParser as MarkerParserLlm
-from pdf_parser_docling_llm import PdfParser as DoclingParserLlm
-from pdf_parser_markitdown_llm import PdfParser as MarkItDownParserLlm
-from pdf_parser_markitdown import PdfParser as MarkItDownParser
+# from pdf_parser_pymupdf4llm import PdfParser as PyMuPdfParser
+# from pdf_parser_kreuzberg import PdfParser as KreuzbergParser
+# from pdf_parser_docling import PdfParser as DoclingParser
+# from pdf_parser_marker import PdfParser as MarkerParser
+# from pdf_parser_llm_model import PdfParser as LmStudioParser
+# from pdf_parser_marker_llm import PdfParser as MarkerParserLlm
+# from pdf_parser_docling_llm import PdfParser as DoclingParserLlm
+# from pdf_parser_markitdown_llm import PdfParser as MarkItDownParserLlm
+# from pdf_parser_markitdown import PdfParser as MarkItDownParser
 
+# from pdf_parser_marker_new_3 import PdfParser as MarkerParser
+from pdf_parser_marker_new_llm_back import PdfParser as MarkerParser
 
 class ResourceMonitor:
     """Class for monitoring RAM, CPU and GPU usage in a separate thread."""
@@ -224,14 +226,16 @@ def process_pdf_to_test_folders(pdf_path: str):
         return
 
     parsers = {
-        "markitdownLlm": MarkItDownParserLlm,
-        "markitdown": MarkItDownParser,
-        "markerLlm": MarkerParserLlm,
-        "doclingLlm": DoclingParserLlm,
-        "llmstudio": LmStudioParser,
-        "pymupdf4llm": PyMuPdfParser,
-        "kreuzberg": KreuzbergParser,
-        "docling": DoclingParser,
+        # "markitdownLlm": MarkItDownParserLlm,
+        # "markitdown": MarkItDownParser,
+        # "markerLlm": MarkerParserLlm,
+        # "doclingLlm": DoclingParserLlm,
+        # "llmstudio": LmStudioParser,
+        # "pymupdf4llm": PyMuPdfParser,
+        # "kreuzberg": KreuzbergParser,
+        # "docling": DoclingParser,
+        # "marker": MarkerParser,
+
         "marker": MarkerParser,
 
     }
@@ -290,7 +294,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         target_pdf = sys.argv[1]
     else:
-        target_pdf = "data/ISO_20022_Programme_UHB_SR2023_Edition-1-20.pdf"
+        target_pdf = "data/umowa_testowa_2.pdf"
         print(f"Nie podano pliku w argumencie. Używam domyślnego: {target_pdf}")
 
     process_pdf_to_test_folders(target_pdf)
