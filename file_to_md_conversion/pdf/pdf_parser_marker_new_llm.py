@@ -16,9 +16,9 @@ import threading
 from collections import Counter
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Union
-
-import pymupdf  # PyMuPDF
+import pymupdf
 from dotenv import load_dotenv
+load_dotenv()
 from PIL import Image
 import torch
 from langchain_core.documents import Document
@@ -27,10 +27,8 @@ from langchain_openai import ChatOpenAI
 from marker.config.parser import ConfigParser
 from marker.converters.pdf import PdfConverter
 from marker.models import create_model_dict
-
 from base_parser import BaseDocumentParser
 
-load_dotenv()
 logger = logging.getLogger(__name__)
 
 # --- Vision model for the second pass on pictures (from .env) ---
@@ -54,7 +52,7 @@ MIN_OCR_LETTER_RATIO = 0.4        # letters / non-space characters
 
 # --- Pages without extractable text (plans, drawings, photos, stamps) ---
 INCLUDE_NON_TEXT_PAGES = True     # keep them as a short placeholder Document
-NON_TEXT_PLACEHOLDER = "[Strona bez tekstu: rysunek, plan lub obraz]"
+NON_TEXT_PLACEHOLDER = "[No text on page: drawing, plan or image]"
 
 # --- Images / figures detected by Marker ---
 # Pictures and figures that Marker extracts are saved to
@@ -64,7 +62,7 @@ NON_TEXT_PLACEHOLDER = "[Strona bez tekstu: rysunek, plan lub obraz]"
 # Markdown-image variant: IMAGE_MARKER_TEMPLATE = "![OBRAZ {name}]({path})"
 SAVE_IMAGES = True
 IMAGES_DIR = "img"
-IMAGE_MARKER_TEMPLATE = "[OBRAZ: {path}]"
+IMAGE_MARKER_TEMPLATE = "[IMAGE: {path}]"
 # Pictures with a shorter side below this are treated as noise (pen initials,
 # small stamps, codes) and are neither saved nor referenced in the Markdown.
 # Independent of OCR_PICTURE_MIN_PX, which only gates the second OCR pass.
@@ -82,7 +80,7 @@ OCR_PICTURES = True
 OCR_PICTURE_MIN_PX = 150          # pictures with a shorter side are skipped
 OCR_PICTURES_MAX_PER_DOC = 50     # safety limit of extra VLM calls per file
 VLM_MAX_TOKENS = 2000             # max length of the Markdown the model may return
-OCR_TEXT_LABEL = "[Tekst rozpoznany z obrazu]"
+OCR_TEXT_LABEL = "[Text recognized from the image]"
 # The second pass often reads slightly-skewed scans imperfectly, so it uses
 # its own, more forgiving noise thresholds than the main OCR filter above.
 PIC_OCR_MIN_LETTERS = 6
@@ -157,6 +155,10 @@ class PdfParser(BaseDocumentParser):
 
     # A code fence some models wrap the whole answer in ("```markdown ... ```")
     _CODE_FENCE_RE = re.compile(r"^```[^\n]*\n(.*?)\n?```\s*$", re.DOTALL)
+
+    # Page index embedded in Marker's image names (e.g. "_page_3_Picture_0.jpeg");
+    # Marker counts pages from 0
+    _IMAGE_PAGE_RE = re.compile(r"page[_-]?(\d+)", re.IGNORECASE)
 
     # Prompt for the vision model: the answer must be the transcribed text as
     # Markdown and nothing else ("EMPTY" is caught by the noise filter below).
@@ -259,7 +261,9 @@ class PdfParser(BaseDocumentParser):
                 temp_pdf_path = temp_pdf.name
 
             # ── 3. Marker conversion (GPU), serialized ───────────
-            logger.info(f"Starting Marker (Surya) conversion: {source_name}")
+            logger.info(
+                f"Starting Marker (Surya) conversion: {source_name} ({len(pages_info)} pages)"
+            )
             with self._convert_lock:
                 rendered = self.converter(temp_pdf_path)
             md_text = (rendered.markdown or "").strip()
@@ -359,6 +363,12 @@ class PdfParser(BaseDocumentParser):
     def _image_marker(path: str) -> str:
         """Marker text that replaces an image reference in the Markdown."""
         return IMAGE_MARKER_TEMPLATE.format(path=path, name=os.path.basename(path))
+
+    @classmethod
+    def _image_page_number(cls, name: str) -> Optional[int]:
+        """1-based page number from a Marker image name, or None."""
+        match = cls._IMAGE_PAGE_RE.search(name)
+        return int(match.group(1)) + 1 if match else None
 
     def _images_folder(self, source_name: str, pdf_bytes: bytes) -> str:
         """Per-document images folder <images_dir>/<stem>_<hash8>, created."""
@@ -538,10 +548,14 @@ class PdfParser(BaseDocumentParser):
 
         ocr_by_name: Dict[str, str] = {}
         candidates = list(images.items())[:OCR_PICTURES_MAX_PER_DOC]
-        for name, image in candidates:
+        for idx, (name, image) in enumerate(candidates):
+            page_no = self._image_page_number(name)
+            prefix = f"[p{page_no}] " if page_no else ""
+            logger.info(f"{prefix}Picture VLM {idx + 1}/{len(candidates)}: '{name}'")
             text = self._vlm_picture(image)
             if text:
                 ocr_by_name[name] = text
+                logger.info(f"{prefix}Picture VLM: +{len(text)} chars")
 
         logger.info(f"Picture VLM: text recognized in {len(ocr_by_name)}/{len(candidates)} pictures")
         if not ocr_by_name:
@@ -753,6 +767,7 @@ class PdfParser(BaseDocumentParser):
         blank_pages: List[int] = []
         non_text_pages: List[int] = []
         failed_pages: List[int] = []
+        total_pages = len(pages_info)
 
         for info in pages_info:
             if info.kind == "blank":
@@ -840,6 +855,10 @@ class PdfParser(BaseDocumentParser):
                 metadata["image_count"] = len(page_image_paths)
                 metadata["image_paths"] = ";".join(page_image_paths)
             text = self._collapse_list_numbers(text)
+            logger.info(
+                f"[p{info.number}/{total_pages}] done: type={page_type} "
+                f"method={method} chars={len(text)}"
+            )
             documents.append(Document(page_content=text, metadata=metadata))
 
         if blank_pages:
