@@ -91,6 +91,12 @@ IMAGE_MARKER_TEMPLATE = "[IMAGE: {path}]"
 # small stamps, codes) and are neither saved nor referenced in the Markdown.
 # Independent of OCR_PICTURE_MIN_PX, which only gates the second OCR pass.
 IMAGE_MIN_PX = 150
+# Marker names the images it extracts __page_<page>_Picture_<n> (photos,
+# pasted scans) and __page_<page>_Figure_<n> (figures). With
+# PICTURE_TYPE_SAVE = False the "Picture"-type images are neither saved nor
+# referenced in the Markdown (their references are dropped, like the images
+# below IMAGE_MIN_PX, and they never reach the VLM pass); True keeps them.
+PICTURE_TYPE_SAVE = False
 
 # --- Second pass on pictures: VLM (vision-language model) ---
 # Marker does not run OCR inside blocks it labels as Picture/Figure. A scanned
@@ -124,12 +130,6 @@ OCR_PLACEHOLDER_PAGES = True          # VLM pass on the ink crop
 SAVE_PLACEHOLDER_PAGE_IMAGES = True   # save the ink crop as a PNG
 PLACEHOLDER_PAGE_DPI = 150            # render resolution of the page
 PLACEHOLDER_PAGE_MAX_PX = 3000        # longest side cap (px) of that render
-# A page that slipped past the "blank" classification (scanner speckle,
-# edge shadow) still holds (almost) no ink in the full render: nothing to
-# crop, OCR or save - the render is dropped instead of being written out
-# as a whole white page_NNN.png. Real content (even a light sketch) is
-# well above this share; lower it if light drawings start getting skipped.
-PLACEHOLDER_MIN_INK_RATIO = 0.005
 
 
 @dataclass
@@ -471,6 +471,8 @@ class PdfParser(BaseDocumentParser):
     ) -> Dict[str, str]:
         """
         Saves Marker's images (PIL) to <images_dir>/<document>_<hash>/.
+        Skips images below IMAGE_MIN_PX and, when PICTURE_TYPE_SAVE is off,
+        the Picture-type images (no save, no Markdown reference, no VLM pass).
         Returns {marker file name: relative path with forward slashes}.
         """
         if not SAVE_IMAGES or not images:
@@ -481,6 +483,7 @@ class PdfParser(BaseDocumentParser):
 
         image_map: Dict[str, str] = {}
         skipped = 0
+        skipped_picture = 0
         for name, image in images.items():
             width, height = image.size
             if min(width, height) < IMAGE_MIN_PX:
@@ -488,6 +491,11 @@ class PdfParser(BaseDocumentParser):
                 skipped += 1
                 continue
             safe_name = os.path.basename(name)
+            if not PICTURE_TYPE_SAVE and "Picture" in safe_name:
+                # __page_<n>_Picture_<m> (photos / pasted scans): not saved,
+                # and _apply_images drops their Markdown references
+                skipped_picture += 1
+                continue
             file_path = os.path.join(target_dir, safe_name)
             try:
                 # JPEG cannot store alpha / palette modes
@@ -501,7 +509,8 @@ class PdfParser(BaseDocumentParser):
 
         logger.info(
             f"Saved {len(image_map)}/{len(images)} images to '{target_dir}' "
-            f"({source_name}); {skipped} below IMAGE_MIN_PX skipped"
+            f"({source_name}); {skipped} below IMAGE_MIN_PX, "
+            f"{skipped_picture} Picture-type skipped"
         )
         return image_map
 
@@ -554,27 +563,6 @@ class PdfParser(BaseDocumentParser):
             return image.crop((left, top, right, bottom))
         except Exception:
             return image  # never let cropping break the OCR pass
-
-    @staticmethod
-    def _image_ink_ratio(image: "Image.Image") -> float:
-        """
-        Share of 'ink' pixels in a rendered image - the same background/ink
-        logic as _ink_ratio, but computed on an existing PIL image instead of
-        a page. Used to tell a scanned blank page (speckle, shadow) from real
-        content before saving or OCR-ing a whole-page render.
-        """
-        gray = image.convert("L")
-        hist = gray.histogram()
-        total = sum(hist)
-        if not total:
-            return 0.0
-        # a lambda, not hist.__getitem__: the bound method is an Overload and
-        # PyCharm cannot match it against max()'s key signature
-        background = max(range(256), key=lambda v: hist[v])
-        ink = sum(
-            count for value, count in enumerate(hist) if value < background - INK_DELTA
-        )
-        return ink / total
 
     def _vlm_picture(self, image: "Image.Image") -> str:
         """
@@ -743,17 +731,6 @@ class PdfParser(BaseDocumentParser):
             )
             image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
             render_size = image.size
-            # A page that slipped past the "blank" classification (scanner
-            # speckle, edge shadow) holds (almost) no ink in the render:
-            # return before the VLM call instead of writing a whole white
-            # page_NNN.png and burning a VLM call on an empty image.
-            ink_ratio = self._image_ink_ratio(image)
-            if ink_ratio < PLACEHOLDER_MIN_INK_RATIO:
-                logger.info(
-                    f"[p{info.number}] page render holds no ink (ratio={ink_ratio:.4f}) "
-                    f"- treated as blank, not saved ({source_name})"
-                )
-                return "", None
             image = self._crop_to_ink(image)
         except Exception as e:
             logger.warning(f"[p{info.number}] page render failed ({source_name}): {e}")
