@@ -28,6 +28,8 @@ from pydantic import SecretStr
 from marker.config.parser import ConfigParser
 from marker.converters.pdf import PdfConverter
 from marker.models import create_model_dict
+from marker.processors.ignoretext import IgnoreTextProcessor
+from marker.util import classes_to_strings
 from base_parser import BaseDocumentParser
 
 logger = logging.getLogger(__name__)
@@ -58,6 +60,19 @@ MIN_OCR_LETTER_RATIO = 0.4        # letters / non-space characters
 # characters it is a fragment (a few OCR'd words on a mostly-scanned page),
 # not the page's content -> treated as noise, the page goes to the VLM pass.
 MIN_MARKER_CHARS = 40
+
+# --- Marker's header/footer handling ---
+# Marker 2.0 silently drops the top/bottom of pages in TWO places:
+# (a) blocks the layout model classifies as PageHeader/PageFooter default to
+#     ignore_for_output=True (kept only if the config carries
+#     keep_pageheader_in_output / keep_pagefooter_in_output), and
+# (b) IgnoreTextProcessor removes the first/last text block of each page when
+#     it repeats across pages (running headers, footers, page numbers - it
+#     even strips leading/trailing digits before comparing).
+# With KEEP_PAGE_HEADERS_FOOTERS = True both mechanisms are disabled, so the
+# FULL page content reaches the output (needed for RAG); set it to False to
+# get Marker's default denoising back.
+KEEP_PAGE_HEADERS_FOOTERS = True
 
 # --- Pages without extractable text (plans, drawings, photos, stamps) ---
 INCLUDE_NON_TEXT_PAGES = True     # keep them as a short placeholder Document
@@ -208,13 +223,30 @@ class PdfParser(BaseDocumentParser):
         self._device = self._detect_device()
         self.models = self._get_shared_models()
 
-        # Converter configuration (paginate_output -> page separators in Markdown)
+        # Converter configuration (paginate_output -> page separators in Markdown).
+        # See KEEP_PAGE_HEADERS_FOOTERS: the keep_* flags re-include the
+        # PageHeader/PageFooter blocks (the renderer reads them from this
+        # config dict), and IgnoreTextProcessor is dropped from Marker's
+        # default processor chain (the rest of the chain is untouched).
         config_dict = ConfigParser(
-            {"languages": languages, "paginate_output": True}
+            {
+                "languages": languages,
+                "paginate_output": True,
+                "keep_pageheader_in_output": KEEP_PAGE_HEADERS_FOOTERS,
+                "keep_pagefooter_in_output": KEEP_PAGE_HEADERS_FOOTERS,
+            }
         ).generate_config_dict()
+        processor_list = classes_to_strings(
+            [
+                processor
+                for processor in PdfConverter.default_processors
+                if not (processor is IgnoreTextProcessor and KEEP_PAGE_HEADERS_FOOTERS)
+            ]
+        )
         self.converter = PdfConverter(
             config=config_dict,
             artifact_dict=self.models,
+            processor_list=processor_list,
         )
 
         # ── VLM for the second pass on pictures ─────────────────
