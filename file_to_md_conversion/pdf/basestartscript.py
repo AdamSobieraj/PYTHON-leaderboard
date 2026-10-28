@@ -5,6 +5,18 @@ import shutil
 import threading
 import psutil
 
+# Wczytanie zmiennych środowiskowych z pliku .env (jeśli istnieje).
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass
+
+# Czy zapisywać obrazy zwracane przez parser (metadata["images"]) obok pliku
+# .md? Ustawiane przez zmienną SAVE_IMAGES w .env (domyślnie: true).
+SAVE_IMAGES = os.getenv("SAVE_IMAGES", "true").strip().lower() in ("1", "true", "yes", "tak")
+
 # Attempt to import the GPU (NVIDIA) handling library
 try:
     import pynvml
@@ -36,7 +48,36 @@ except ImportError:
 # from pdf_parser_markitdown import PdfParser as MarkItDownParser
 
 # from pdf_parser_marker_new_3 import PdfParser as MarkerParser
-from pdf_parser_marker_new_llm_back import PdfParser as MarkerParser
+from pdf_parser_marker_new_llm import PdfParser as MarkerParser
+
+
+def save_document_images(documents: list, base_dir: str) -> int:
+    """
+    Saves the images a parser returned in metadata["images"] (the contract is
+    documented on BaseDocumentParser.parse in base_parser.py) to
+    <base_dir>/<path>, creating subfolders as needed. Paths that escape
+    base_dir are skipped. Returns the number of files written (0 if no
+    document carries images).
+    """
+    saved = 0
+    base = os.path.normpath(base_dir)
+    for doc in documents:
+        for image in (doc.metadata or {}).get("images") or []:
+            rel_path = image.get("path")
+            data = image.get("data")
+            if not rel_path or data is None:
+                continue
+            rel = rel_path.replace("/", os.sep)
+            if os.path.isabs(rel):
+                continue
+            target = os.path.normpath(os.path.join(base_dir, rel))
+            if not (target == base or target.startswith(base + os.sep)):
+                continue  # never let a parser-supplied path escape base_dir
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, "wb") as f:
+                f.write(data)
+            saved += 1
+    return saved
 
 class ResourceMonitor:
     """Class for monitoring RAM, CPU and GPU usage in a separate thread."""
@@ -141,8 +182,13 @@ def run_parser_and_save(parser_name: str, parser_class, pdf_path: str, base_outp
             md_file.write(content)
             md_file.write("\n\n---\n\n")
 
+    saved_images = save_document_images(documents, output_folder) if SAVE_IMAGES else 0
+
     print(
-        f"[{parser_name}] Gotowe! Zapisano elementów: {len(documents)}, Znaków: {total_characters}. Czas: {elapsed_time:.2f} s.")
+        f"[{parser_name}] Gotowe! Zapisano elementów: {len(documents)}, "
+        f"Znaków: {total_characters}, obrazów: {saved_images}"
+        f"{'' if SAVE_IMAGES else ' (zapis obrazów wyłączony w .env)'}. "
+        f"Czas: {elapsed_time:.2f} s.")
     print(
         f"[{parser_name}] RAM (Peak): {resource_stats['ram_peak_mb']:.1f} MB | CPU (Avg): {resource_stats['cpu_avg_percent']:.1f}%")
 
@@ -214,6 +260,9 @@ def generate_charts(timing_results, base_output_folder, file_name_without_ext):
 
 def process_pdf_to_test_folders(pdf_path: str):
     base_output_folder = "output"
+
+    if not SAVE_IMAGES:
+        print("Zapis obrazów wyłączony (SAVE_IMAGES=false w .env) - parser nadal je zwraca, ale skrypt nie zapisze.")
 
     if os.path.exists(base_output_folder):
         print(f"Czyszczenie poprzednich wyników (usuwanie folderu '{base_output_folder}')...")

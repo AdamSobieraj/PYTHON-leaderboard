@@ -79,23 +79,31 @@ INCLUDE_NON_TEXT_PAGES = True     # keep them as a short placeholder Document
 NON_TEXT_PLACEHOLDER = "[No text on page: drawing, plan or image]"
 
 # --- Images / figures detected by Marker ---
-# Pictures and figures that Marker extracts are saved to
-#   <IMAGES_DIR>/<document name>_<hash>/<marker file name>
+# Pictures and figures that Marker extracts are NOT written to disk by this
+# parser: they are returned in the Document metadata (see base_parser.py),
+#   metadata["images"] = [
+#       {"path": <IMAGES_SUBDIR>/<document name>_<hash>/<marker file name>,
+#        "data": <encoded image bytes>}, ...
+#   ]
 # and the reference in the Markdown is replaced with a marker built from
-# IMAGE_MARKER_TEMPLATE ({path} = relative path, {name} = file name).
+# IMAGE_MARKER_TEMPLATE ({path} = relative path, {name} = file name). The
+# relative path is resolved against the output folder of the script that
+# saves the images (save_document_images in basestartscript.py), so the
+# marker points at a file next to the written .md.
 # Markdown-image variant: IMAGE_MARKER_TEMPLATE = "![IMAGE {name}]({path})"
-SAVE_IMAGES = True
-IMAGES_DIR = "img"
+RETURN_IMAGES = True
+IMAGES_SUBDIR = "images"
 IMAGE_MARKER_TEMPLATE = "[IMAGE: {path}]"
 # Pictures with a shorter side below this are treated as noise (pen initials,
-# small stamps, codes) and are neither saved nor referenced in the Markdown.
+# small stamps, codes) and are neither returned nor referenced in the Markdown.
 # Independent of OCR_PICTURE_MIN_PX, which only gates the second OCR pass.
 IMAGE_MIN_PX = 150
 # Marker names the images it extracts __page_<page>_Picture_<n> (photos,
 # pasted scans) and __page_<page>_Figure_<n> (figures). With
-# PICTURE_TYPE_SAVE = False the "Picture"-type images are neither saved nor
-# referenced in the Markdown (their references are dropped, like the images
-# below IMAGE_MIN_PX, and they never reach the VLM pass); True keeps them.
+# PICTURE_TYPE_SAVE = False the "Picture"-type images are neither returned
+# nor referenced in the Markdown (their references are dropped, like the
+# images below IMAGE_MIN_PX, and they never reach the VLM pass); True keeps
+# them.
 PICTURE_TYPE_SAVE = False
 
 # --- Second pass on pictures: VLM (vision-language model) ---
@@ -125,9 +133,10 @@ PIC_OCR_LETTER_RATIO = 0.3
 # at its native resolution if the page holds one, otherwise a PyMuPDF
 # render - and cropped to its ink region: the VLM pass is run on the
 # crop (the text fills the frame, so it reads much better) and the crop is
-# saved to the images folder, so the drawing/plan is not lost.
+# returned in the Document metadata (saved by the consuming script), so the
+# drawing/plan is not lost.
 OCR_PLACEHOLDER_PAGES = True          # VLM pass on the ink crop
-SAVE_PLACEHOLDER_PAGE_IMAGES = True   # save the ink crop as a PNG
+SAVE_PLACEHOLDER_PAGE_IMAGES = True   # include the ink crop (PNG) in the returned images
 PLACEHOLDER_PAGE_DPI = 150            # render resolution of the page
 PLACEHOLDER_PAGE_MAX_PX = 3000        # longest side cap (px) of that render
 
@@ -156,8 +165,8 @@ class PdfParser(BaseDocumentParser):
        - scan    -> Marker OCR output, noise-filtered,
        - drawing -> placeholder (plan / image without text); as a last
                     resort the page is rendered and cropped to ink, the VLM
-                    pass is tried on the crop, and the crop is saved to the
-                    images folder so the drawing is not lost,
+                    pass is tried on the crop, and the crop is returned in
+                    the Document metadata so the drawing is not lost,
        - blank   -> skipped; blank pages also mark a boundary between documents
                     (metadata["section_index"]).
     """
@@ -215,13 +224,11 @@ class PdfParser(BaseDocumentParser):
         "- If the image contains no readable text, output exactly: EMPTY"
     )
 
-    def __init__(self, languages: str = "pl,en", images_dir: str = IMAGES_DIR):
+    def __init__(self, languages: str = "pl,en"):
         """
         Args:
             languages: Comma-separated language codes (e.g. "pl,en").
                        May be ignored in newer Marker versions.
-            images_dir: Folder for pictures/figures extracted by Marker
-                        (used only if SAVE_IMAGES is True).
         """
         # ── GPU / Marker models ──────────────────────────────────
         # Note: the device is chosen by Marker itself (TORCH_DEVICE environment
@@ -279,7 +286,6 @@ class PdfParser(BaseDocumentParser):
             )
 
         self.languages = languages
-        self.images_dir = images_dir
 
         # FIX: hard, queryable counter for the "no page separators found"
         # fallback path, instead of relying solely on an easily-missed
@@ -330,15 +336,16 @@ class PdfParser(BaseDocumentParser):
             with self._convert_lock:
                 rendered = self.converter(temp_pdf_path)
             md_text = (rendered.markdown or "").strip()
-            # Pictures/figures detected by Marker -> files in images_dir.
+            # Pictures/figures detected by Marker -> bytes returned in the
+            # Document metadata (see base_parser.py), not saved by us.
             # The Markdown still holds the raw "![](...)" references at this
             # point; they are replaced later, when the documents are built
             # (the page logic needs to see them to detect image-only pages).
-            # Saving runs BEFORE the VLM pass so the second pass only sees
-            # pictures that will actually be referenced in the output.
-            # The hash is computed once and reused for the images folder.
+            # Collecting runs BEFORE the VLM pass so the second pass only
+            # sees pictures that will actually be referenced in the output.
+            # The hash is computed once and reused for the images folder name.
             doc_hash = hashlib.sha1(pdf_bytes).hexdigest()[:8]
-            image_map = self._save_images(
+            image_map, image_data = self._collect_images(
                 getattr(rendered, "images", None), source_name, doc_hash
             )
             # Second pass on pictures via the VLM (e.g. a scanned fragment pasted into a page)
@@ -362,11 +369,20 @@ class PdfParser(BaseDocumentParser):
                     f"Returning the whole text as a single Document. "
                     f"(cumulative fallback count: {fallback_count})"
                 )
+                fallback_meta = self._base_metadata(source_name)
+                if image_data:
+                    # whole-document fallback: every collected image goes with it
+                    fallback_meta["image_count"] = len(image_data)
+                    fallback_meta["image_paths"] = ";".join(image_data)
+                    fallback_meta["images"] = [
+                        {"path": path, "data": data}
+                        for path, data in image_data.items()
+                    ]
                 documents = (
                     [
                         Document(
                             page_content=self._apply_images(md_text, image_map),
-                            metadata=self._base_metadata(source_name),
+                            metadata=fallback_meta,
                         )
                     ]
                     if md_text
@@ -380,6 +396,7 @@ class PdfParser(BaseDocumentParser):
                     )
                 documents = self._build_documents(
                     marker_pages, pages_info, source_name, image_map,
+                    image_data=image_data,
                     pdf_doc=pdf_doc, doc_hash=doc_hash,
                 )
 
@@ -451,37 +468,37 @@ class PdfParser(BaseDocumentParser):
         match = cls._IMAGE_PAGE_RE.search(name)
         return int(match.group(1)) + 1 if match else None
 
-    def _images_folder(self, source_name: str, doc_hash: str) -> str:
-        """Per-document images folder <images_dir>/<stem>_<hash8>, created.
+    @staticmethod
+    def _images_folder_name(source_name: str, doc_hash: str) -> str:
+        """Per-document images folder name <stem>_<hash8>.
 
         doc_hash is the 8-char prefix of SHA-1 over the whole PDF, computed
         ONCE in parse() (hashing a large file per call would be wasteful).
         """
         stem = re.sub(r"[^\w.-]+", "_", os.path.splitext(source_name)[0]).strip("._") or "document"
-        folder = f"{stem}_{doc_hash}"
-        target_dir = os.path.join(self.images_dir, folder)
-        os.makedirs(target_dir, exist_ok=True)
-        return target_dir
+        return f"{stem}_{doc_hash}"
 
-    def _save_images(
+    def _collect_images(
         self,
         images: Optional[Dict[str, Image.Image]],
         source_name: str,
         doc_hash: str,
-    ) -> Dict[str, str]:
+    ) -> Tuple[Dict[str, str], Dict[str, bytes]]:
         """
-        Saves Marker's images (PIL) to <images_dir>/<document>_<hash>/.
+        Collects Marker's images (PIL) for return in the Document metadata.
         Skips images below IMAGE_MIN_PX and, when PICTURE_TYPE_SAVE is off,
-        the Picture-type images (no save, no Markdown reference, no VLM pass).
-        Returns {marker file name: relative path with forward slashes}.
+        the Picture-type images (no return, no Markdown reference, no VLM
+        pass). Returns (image_map, image_data):
+          image_map  = {marker file name: relative path with forward slashes}
+          image_data = {relative path: encoded image bytes}
         """
-        if not SAVE_IMAGES or not images:
-            return {}
+        if not RETURN_IMAGES or not images:
+            return {}, {}
 
-        target_dir = self._images_folder(source_name, doc_hash)
-        folder = os.path.basename(target_dir)
+        folder = self._images_folder_name(source_name, doc_hash)
 
         image_map: Dict[str, str] = {}
+        image_data: Dict[str, bytes] = {}
         skipped = 0
         skipped_picture = 0
         for name, image in images.items():
@@ -492,27 +509,40 @@ class PdfParser(BaseDocumentParser):
                 continue
             safe_name = os.path.basename(name)
             if not PICTURE_TYPE_SAVE and "Picture" in safe_name:
-                # __page_<n>_Picture_<m> (photos / pasted scans): not saved,
-                # and _apply_images drops their Markdown references
+                # __page_<n>_Picture_<m> (photos / pasted scans): not
+                # returned, and _apply_images drops their Markdown references
                 skipped_picture += 1
                 continue
-            file_path = os.path.join(target_dir, safe_name)
             try:
-                # JPEG cannot store alpha / palette modes
-                if safe_name.lower().endswith((".jpg", ".jpeg")) and image.mode != "RGB":
-                    image = image.convert("RGB")
-                image.save(file_path)
+                data = self._encode_image(image, safe_name)
             except Exception as e:
-                logger.warning(f"Could not save image '{name}' ({source_name}): {e}")
+                logger.warning(f"Could not encode image '{name}' ({source_name}): {e}")
                 continue
-            image_map[name] = f"{self.images_dir}/{folder}/{safe_name}".replace(os.sep, "/")
+            rel_path = f"{IMAGES_SUBDIR}/{folder}/{safe_name}".replace(os.sep, "/")
+            image_map[name] = rel_path
+            image_data[rel_path] = data
 
         logger.info(
-            f"Saved {len(image_map)}/{len(images)} images to '{target_dir}' "
-            f"({source_name}); {skipped} below IMAGE_MIN_PX, "
+            f"Collected {len(image_map)}/{len(images)} images for "
+            f"'{source_name}'; {skipped} below IMAGE_MIN_PX, "
             f"{skipped_picture} Picture-type skipped"
         )
-        return image_map
+        return image_map, image_data
+
+    @staticmethod
+    def _encode_image(image: "Image.Image", file_name: str) -> bytes:
+        """Encodes a PIL image to bytes in the format its file name suggests."""
+        ext = os.path.splitext(file_name)[1].lower().lstrip(".")
+        fmt = {
+            "jpg": "JPEG", "jpeg": "JPEG", "png": "PNG", "webp": "WEBP",
+            "gif": "GIF", "bmp": "BMP", "tif": "TIFF", "tiff": "TIFF",
+        }.get(ext, "PNG")
+        # JPEG cannot store alpha / palette modes
+        if fmt == "JPEG" and image.mode not in ("RGB", "L"):
+            image = image.convert("RGB")
+        buf = io.BytesIO()
+        image.save(buf, format=fmt)
+        return buf.getvalue()
 
     def _apply_images(self, text: str, image_map: Optional[Dict[str, str]]) -> str:
         """Replaces Marker's '![](file)' references with image markers."""
@@ -521,14 +551,14 @@ class PdfParser(BaseDocumentParser):
 
         def _replace(match: "re.Match") -> str:
             path = image_map.get(match.group(1))
-            # References to images we did not save (too small / noise) are
+            # References to images we did not return (too small / noise) are
             # dropped from the Markdown instead of left as a broken link.
             return self._image_marker(path) if path else ""
 
         return self._MD_IMAGE_REF_RE.sub(_replace, text)
 
     def _image_paths(self, text: str, image_map: Optional[Dict[str, str]]) -> List[str]:
-        """Saved image paths referenced in the given Marker text."""
+        """Image paths referenced in the given Marker text."""
         if not text or not image_map:
             return []
         return [image_map[n] for n in self._MD_IMAGE_REF_RE.findall(text) if n in image_map]
@@ -652,9 +682,9 @@ class PdfParser(BaseDocumentParser):
         Puts the text recognized in pictures right after their '![](file)'
         references. Done on the raw Marker Markdown, BEFORE the page logic, so a
         page whose only content is such a picture is no longer treated as empty.
-        Only pictures that are referenced in the Markdown AND actually saved
-        (image_map) are sent to the VLM - anything else would waste the
-        serialized inference slot and/or leave an orphaned text block.
+        Only pictures that are referenced in the Markdown AND actually
+        returned (image_map) are sent to the VLM - anything else would waste
+        the serialized inference slot and/or leave an orphaned text block.
         """
         if not OCR_PICTURES or self.vlm is None or not images or not md_text:
             return md_text
@@ -696,19 +726,19 @@ class PdfParser(BaseDocumentParser):
         info: PageInfo,
         source_name: str,
         doc_hash: Optional[str],
-    ) -> Tuple[str, Optional[str]]:
+    ) -> Tuple[str, Optional[str], Optional[bytes]]:
         """
         Last resort for a page that is about to become a non-text placeholder
         but on which Marker detected no picture: a scanned fragment (e.g. a
         quarter page, slightly skewed) that Marker treated as a scan and whose
         OCR came back as noise. Renders the page with PyMuPDF and crops it to
-        ink. Returns (ocr_text, saved_image_path): the VLM pass is
+        ink. Returns (ocr_text, image_path, image_bytes): the VLM pass is
         tried on the crop (the text fills the frame, so it reads much better)
-        and the crop is saved to the images folder, so the drawing/plan is not
-        lost.
+        and the crop is returned for saving by the consuming script, so the
+        drawing/plan is not lost.
         """
         if pdf_doc is None or not doc_hash:
-            return "", None
+            return "", None, None
         try:
             # Cap the longest side: a large-format plan sheet at 150 DPI could
             # otherwise allocate a multi-GB pixmap.
@@ -734,7 +764,7 @@ class PdfParser(BaseDocumentParser):
             image = self._crop_to_ink(image)
         except Exception as e:
             logger.warning(f"[p{info.number}] page render failed ({source_name}): {e}")
-            return "", None
+            return "", None, None
 
         ocr_text = self._vlm_picture(image) if OCR_PLACEHOLDER_PAGES else ""
         if ocr_text:
@@ -751,29 +781,29 @@ class PdfParser(BaseDocumentParser):
                 f"(render={render_size[0]}x{render_size[1]} -> "
                 f"crop={image.size[0]}x{image.size[1]}) ({source_name})"
             )
-        rel_path = self._save_rendered_image(
+        rel_path, image_bytes = self._placeholder_page_image(
             image, source_name, doc_hash, f"page_{info.number:03d}.png"
         )
-        return ocr_text, rel_path
+        return ocr_text, rel_path, image_bytes
 
-    def _save_rendered_image(
+    def _placeholder_page_image(
         self, image: "Image.Image", source_name: str, doc_hash: str, file_name: str
-    ) -> Optional[str]:
+    ) -> Tuple[Optional[str], Optional[bytes]]:
         """
-        Saves a rendered (ink-cropped) page to the per-document images folder.
-        Returns the relative path with forward slashes, or None.
+        Packages a rendered (ink-cropped) page for return in the Document
+        metadata. Returns (relative path with forward slashes, PNG bytes),
+        or (None, None).
         """
         if not SAVE_PLACEHOLDER_PAGE_IMAGES:
-            return None
+            return None, None
         try:
-            target_dir = self._images_folder(source_name, doc_hash)
-            image.save(os.path.join(target_dir, file_name))
-            return (
-                f"{self.images_dir}/{os.path.basename(target_dir)}/{file_name}"
-            ).replace(os.sep, "/")
+            rel_path = (
+                f"{IMAGES_SUBDIR}/{self._images_folder_name(source_name, doc_hash)}/{file_name}"
+            )
+            return rel_path, self._encode_image(image, file_name)
         except Exception as e:
-            logger.warning(f"Could not save rendered page '{file_name}' ({source_name}): {e}")
-            return None
+            logger.warning(f"Could not encode rendered page '{file_name}' ({source_name}): {e}")
+            return None, None
 
     # ══════════════════════════════════════════════════════════════
     # PAGE ANALYSIS (classification + section boundaries)
@@ -912,10 +942,18 @@ class PdfParser(BaseDocumentParser):
         pages_info: List[PageInfo],
         source_name: str,
         image_map: Optional[Dict[str, str]] = None,
+        image_data: Optional[Dict[str, bytes]] = None,
         pdf_doc: Optional["pymupdf.Document"] = None,
         doc_hash: str = "",
     ) -> List[Document]:
-        """Combines Marker output with the page analysis into one Document per page."""
+        """
+        Combines Marker output with the page analysis into one Document per
+        page. Images referenced by a page are attached to that Document's
+        metadata (metadata["images"], see the image contract in
+        base_parser.py); the consuming script saves them.
+        """
+        image_map = image_map or {}
+        image_data = image_data or {}
         documents: List[Document] = []
         blank_pages: List[int] = []
         non_text_pages: List[int] = []
@@ -941,8 +979,11 @@ class PdfParser(BaseDocumentParser):
             page_type = info.kind
             method = "marker"
             # Images Marker detected on this page (computed early: the
-            # placeholder recovery below may add its saved page render)
+            # placeholder recovery below may add its rendered page crop).
+            # page_image_data holds the bytes of the added crop; everything
+            # else is looked up in image_data.
             page_image_paths = self._image_paths(raw_marker_text, image_map)
+            page_image_data: Dict[str, bytes] = {}
 
             if info.kind == "text":
                 visible = self._MD_IMAGE_RE.sub("", text).strip()
@@ -996,11 +1037,12 @@ class PdfParser(BaseDocumentParser):
                 # noise, and no picture block was detected - the drawing/plan
                 # would be lost entirely. Render the page and crop it to ink:
                 # try the second OCR pass on the crop and save the crop.
-                fallback_text, rel_path = self._recover_placeholder_page(
+                fallback_text, rel_path, fallback_image = self._recover_placeholder_page(
                     pdf_doc, info, source_name, doc_hash
                 )
-                if rel_path:
+                if rel_path and fallback_image is not None:
                     page_image_paths.append(rel_path)
+                    page_image_data[rel_path] = fallback_image
                 if fallback_text:
                     text = f"{OCR_TEXT_LABEL}\n{fallback_text}"
                     method = "vlm-page"
@@ -1034,6 +1076,15 @@ class PdfParser(BaseDocumentParser):
             if page_image_paths:
                 metadata["image_count"] = len(page_image_paths)
                 metadata["image_paths"] = ";".join(page_image_paths)
+                images_meta: List[Dict[str, object]] = []
+                for path in page_image_paths:
+                    data = page_image_data.get(path)
+                    if data is None:
+                        data = image_data.get(path)
+                    if data is not None:
+                        images_meta.append({"path": path, "data": data})
+                if images_meta:
+                    metadata["images"] = images_meta
             text = self._collapse_list_numbers(text)
             logger.info(
                 f"[p{info.number}/{total_pages}] done: type={page_type} "
